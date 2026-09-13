@@ -97,9 +97,9 @@ class Game:
             border_width=1,
         )
         self.tool_rects = {
-            "hint": pygame.Rect(590, 156, 312, 56),
-            "undo": pygame.Rect(590, 218, 312, 56),
-            "remove": pygame.Rect(590, 280, 312, 56),
+            "hint": pygame.Rect(590, 162, 312, 56),
+            "undo": pygame.Rect(590, 222, 312, 56),
+            "remove": pygame.Rect(590, 282, 312, 56),
         }
 
         self.current_level_index = 0
@@ -527,7 +527,7 @@ class Game:
     def _draw_sidebar(self) -> None:
         left = 590
         tools_title = self.small_font.render("每关一次 / 道具", True, INK_SOFT)
-        self.screen.blit(tools_title, (left, 136))
+        self.screen.blit(tools_title, (left, 120))
 
         mouse_position = pygame.mouse.get_pos()
         for tool in TOOL_KEYS:
