@@ -172,7 +172,7 @@ def draw_tool_icon(
     center: tuple[int, int],
     color: tuple[int, int, int],
 ) -> None:
-    """绘制提示、撤销和移出道具的线性图标。"""
+    """绘制提示、增加失误次数和移出道具的线性图标。"""
     center_x, center_y = center
 
     if tool == "hint":
@@ -214,27 +214,23 @@ def draw_tool_icon(
         )
         return
 
-    if tool == "undo":
-        arc_rect = pygame.Rect(center_x - 11, center_y - 10, 22, 20)
-        pygame.draw.arc(
+    if tool == "extra_mistake":
+        pygame.draw.circle(surface, color, (center_x, center_y), 12, 2)
+        pygame.draw.line(
             surface,
             color,
-            arc_rect,
-            math.pi * 0.10,
-            math.pi * 1.55,
+            (center_x, center_y - 6),
+            (center_x, center_y + 6),
             2,
         )
-        pygame.draw.polygon(
+        pygame.draw.line(
             surface,
             color,
-            (
-                (center_x - 10, center_y - 3),
-                (center_x - 3, center_y - 6),
-                (center_x - 5, center_y + 2),
-            ),
+            (center_x - 6, center_y),
+            (center_x + 6, center_y),
+            2,
         )
         return
-
     box = pygame.Rect(center_x - 12, center_y - 8, 17, 17)
     pygame.draw.rect(surface, color, box, width=2, border_radius=3)
     pygame.draw.line(

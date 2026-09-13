@@ -43,15 +43,15 @@ CELL_HINT = (226, 235, 216)
 CELL_BLOCKED = (248, 231, 225)
 BOARD_BORDER = (157, 155, 146)
 
-TOOL_KEYS = ("hint", "undo", "remove")
+TOOL_KEYS = ("hint", "extra_mistake", "remove")
 TOOL_LABELS = {
     "hint": "提示",
-    "undo": "撤销",
+    "extra_mistake": "增加失误次数",
     "remove": "移出",
 }
 TOOL_DESCRIPTIONS = {
     "hint": "高亮可走箭头",
-    "undo": "恢复上一步",
+    "extra_mistake": "剩余失误次数加一",
     "remove": "移除指向箭头",
 }
 
@@ -98,7 +98,7 @@ class Game:
         )
         self.tool_rects = {
             "hint": pygame.Rect(590, 162, 312, 56),
-            "undo": pygame.Rect(590, 222, 312, 56),
+            "extra_mistake": pygame.Rect(590, 222, 312, 56),
             "remove": pygame.Rect(590, 282, 312, 56),
         }
 
@@ -113,7 +113,6 @@ class Game:
         self.hint_timer = 0.0
         self.round_finished = False
         self.message = "点击没有被挡住的箭头"
-        self.history: list[tuple[int, int, str]] = []
         self.tool_uses = {key: 1 for key in TOOL_KEYS}
 
     def run(self) -> None:
@@ -190,6 +189,7 @@ class Game:
 
     def _load_level(self) -> None:
         self.board = copy.deepcopy(LEVELS[self.current_level_index])
+        self.max_mistakes = 3
         self.mistakes = 0
         self.hovered_cell = None
         self.feedback_cell = None
@@ -198,7 +198,6 @@ class Game:
         self.hint_timer = 0.0
         self.round_finished = False
         self.message = "点击没有被挡住的箭头"
-        self.history = []
         self.tool_uses = {key: 1 for key in TOOL_KEYS}
         self.state = GameState.PLAYING
 
@@ -227,7 +226,6 @@ class Game:
         if direction is None:
             return
 
-        self.history.append((row, col, direction))
         self.board[row][col] = None
         self.feedback_cell = None
         self.hint_cell = None
@@ -256,8 +254,8 @@ class Game:
 
         if tool == "hint":
             self._use_hint()
-        elif tool == "undo":
-            self._use_undo()
+        elif tool == "extra_mistake":
+            self._use_extra_mistake()
         elif tool == "remove":
             self._use_remove()
 
@@ -273,18 +271,10 @@ class Game:
 
         self.message = "暂时没有可直接飞出的箭头"
 
-    def _use_undo(self) -> None:
-        if not self.history:
-            self.message = "现在还没有可以撤销的步骤"
-            return
-
-        row, col, direction = self.history.pop()
-        self.board[row][col] = direction
-        self.tool_uses["undo"] = 0
-        self.hint_cell = None
-        self.feedback_cell = None
-        self.round_finished = False
-        self.message = "已撤销上一步"
+    def _use_extra_mistake(self) -> None:
+        self.tool_uses["extra_mistake"] = 0
+        self.max_mistakes += 1
+        self.message = "本关剩余失误次数增加一次"
 
     def _use_remove(self) -> None:
         if self.hovered_cell is None:
