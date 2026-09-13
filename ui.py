@@ -18,7 +18,6 @@ INK_SOFT = (101, 97, 85)
 RULE = (190, 180, 154)
 ACCENT = (174, 58, 43)
 MOSS = (78, 99, 67)
-WHITE = (255, 255, 255)
 
 DIRECTION_VECTORS = {
     "UP": (0, -1),
@@ -47,11 +46,30 @@ def load_font(size: int, bold: bool = False) -> pygame.font.Font:
 
 
 class Button:
-    """方正的印刷风格按钮，不使用发光或悬浮胶囊效果。"""
+    """支持不同圆角与悬停配色的按钮。"""
 
-    def __init__(self, rect: pygame.Rect, text: str) -> None:
+    def __init__(
+        self,
+        rect: pygame.Rect,
+        text: str,
+        *,
+        radius: int = 2,
+        normal_fill: tuple[int, int, int] = PAPER_LIGHT,
+        hover_fill: tuple[int, int, int] = INK,
+        normal_text: tuple[int, int, int] = INK,
+        hover_text: tuple[int, int, int] = PAPER_LIGHT,
+        border_color: tuple[int, int, int] = INK,
+        border_width: int = 2,
+    ) -> None:
         self.rect = rect
         self.text = text
+        self.radius = radius
+        self.normal_fill = normal_fill
+        self.hover_fill = hover_fill
+        self.normal_text = normal_text
+        self.hover_text = hover_text
+        self.border_color = border_color
+        self.border_width = border_width
 
     def contains(self, position: tuple[int, int]) -> bool:
         return self.rect.collidepoint(position)
@@ -63,13 +81,25 @@ class Button:
         mouse_position: tuple[int, int],
     ) -> None:
         hovered = self.contains(mouse_position)
-        background = INK if hovered else PAPER_LIGHT
-        foreground = PAPER_LIGHT if hovered else INK
+        pygame.draw.rect(
+            surface,
+            self.hover_fill if hovered else self.normal_fill,
+            self.rect,
+            border_radius=self.radius,
+        )
+        pygame.draw.rect(
+            surface,
+            self.border_color,
+            self.rect,
+            width=self.border_width,
+            border_radius=self.radius,
+        )
 
-        pygame.draw.rect(surface, background, self.rect, border_radius=2)
-        pygame.draw.rect(surface, INK, self.rect, width=2, border_radius=2)
-
-        label = font.render(self.text, True, foreground)
+        label = font.render(
+            self.text,
+            True,
+            self.hover_text if hovered else self.normal_text,
+        )
         label_rect = label.get_rect(center=self.rect.center)
         surface.blit(label, label_rect)
 
