@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import random
 from pathlib import Path
@@ -163,4 +164,92 @@ def draw_arrow(
     pygame.draw.line(surface, color, tail, stem_end, shaft_width)
     pygame.draw.polygon(
         surface, color, (tip, head_base_left, head_base_right)
+    )
+
+def draw_tool_icon(
+    surface: pygame.Surface,
+    tool: str,
+    center: tuple[int, int],
+    color: tuple[int, int, int],
+) -> None:
+    """绘制提示、撤销和移出道具的线性图标。"""
+    center_x, center_y = center
+
+    if tool == "hint":
+        pygame.draw.circle(surface, color, (center_x, center_y - 3), 8, 2)
+        pygame.draw.line(
+            surface,
+            color,
+            (center_x - 4, center_y + 7),
+            (center_x + 4, center_y + 7),
+            2,
+        )
+        pygame.draw.line(
+            surface,
+            color,
+            (center_x - 3, center_y + 11),
+            (center_x + 3, center_y + 11),
+            2,
+        )
+        pygame.draw.line(
+            surface,
+            color,
+            (center_x, center_y - 17),
+            (center_x, center_y - 13),
+            2,
+        )
+        pygame.draw.line(
+            surface,
+            color,
+            (center_x - 14, center_y - 4),
+            (center_x - 10, center_y - 4),
+            2,
+        )
+        pygame.draw.line(
+            surface,
+            color,
+            (center_x + 10, center_y - 4),
+            (center_x + 14, center_y - 4),
+            2,
+        )
+        return
+
+    if tool == "undo":
+        arc_rect = pygame.Rect(center_x - 11, center_y - 10, 22, 20)
+        pygame.draw.arc(
+            surface,
+            color,
+            arc_rect,
+            math.pi * 0.10,
+            math.pi * 1.55,
+            2,
+        )
+        pygame.draw.polygon(
+            surface,
+            color,
+            (
+                (center_x - 10, center_y - 3),
+                (center_x - 3, center_y - 6),
+                (center_x - 5, center_y + 2),
+            ),
+        )
+        return
+
+    box = pygame.Rect(center_x - 12, center_y - 8, 17, 17)
+    pygame.draw.rect(surface, color, box, width=2, border_radius=3)
+    pygame.draw.line(
+        surface,
+        color,
+        (center_x - 4, center_y + 3),
+        (center_x + 10, center_y - 11),
+        2,
+    )
+    pygame.draw.polygon(
+        surface,
+        color,
+        (
+            (center_x + 12, center_y - 13),
+            (center_x + 5, center_y - 11),
+            (center_x + 10, center_y - 6),
+        ),
     )

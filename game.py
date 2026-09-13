@@ -21,6 +21,7 @@ from ui import (
     Button,
     create_paper_background,
     draw_arrow,
+    draw_tool_icon,
     load_font,
 )
 
@@ -48,6 +49,11 @@ TOOL_LABELS = {
     "undo": "撤销",
     "remove": "移出",
 }
+TOOL_DESCRIPTIONS = {
+    "hint": "高亮可走箭头",
+    "undo": "恢复上一步",
+    "remove": "移除指向箭头",
+}
 
 
 class GameState(Enum):
@@ -74,6 +80,7 @@ class Game:
         self.subtitle_font = load_font(24)
         self.body_font = load_font(21)
         self.small_font = load_font(17)
+        self.tiny_font = load_font(14)
         self.button_font = load_font(24, bold=True)
         self.small_button_font = load_font(18, bold=True)
 
@@ -90,9 +97,9 @@ class Game:
             border_width=1,
         )
         self.tool_rects = {
-            "hint": pygame.Rect(590, 164, 312, 46),
-            "undo": pygame.Rect(590, 216, 312, 46),
-            "remove": pygame.Rect(590, 268, 312, 46),
+            "hint": pygame.Rect(590, 156, 312, 56),
+            "undo": pygame.Rect(590, 218, 312, 56),
+            "remove": pygame.Rect(590, 280, 312, 56),
         }
 
         self.current_level_index = 0
@@ -526,7 +533,7 @@ class Game:
         for tool in TOOL_KEYS:
             self._draw_tool_button(tool, mouse_position)
 
-        pygame.draw.line(self.screen, RULE, (left, 334), (902, 334), 1)
+        pygame.draw.line(self.screen, RULE, (left, 350), (902, 350), 1)
 
         guide_lines = (
             "点按箭头，让它可以飞出棋盘。",
@@ -534,12 +541,12 @@ class Game:
         )
         for index, text in enumerate(guide_lines):
             line = self.small_font.render(text, True, INK_SOFT)
-            self.screen.blit(line, (left, 352 + index * 28))
+            self.screen.blit(line, (left, 368 + index * 28))
 
         remaining = count_remaining_arrows(self.board)
-        self._draw_status_row("剩余箭头", f"{remaining:02d}", 410)
+        self._draw_status_row("剩余箭头", f"{remaining:02d}", 424)
         self._draw_status_row(
-            "剩余失误次数", f"{self.max_mistakes - self.mistakes:02d}", 474
+            "剩余失误次数", f"{self.max_mistakes - self.mistakes:02d}", 488
         )
 
         message_color = INK
@@ -547,7 +554,7 @@ class Game:
             message_color = MOSS if remaining == 0 else ACCENT
 
         message = self.small_font.render(self.message, True, message_color)
-        self.screen.blit(message, (left, 556))
+        self.screen.blit(message, (left, 560))
 
     def _draw_tool_button(
         self, tool: str, mouse_position: tuple[int, int]
@@ -556,15 +563,20 @@ class Game:
         used = self.tool_uses[tool] <= 0
         hovered = not used and rect.collidepoint(mouse_position)
 
-        fill_color = PAPER_DEEP if used else CELL_FACE
-        border_color = RULE
-        if hovered:
-            fill_color = PAPER_HOVER
-            border_color = CELL_HOVER_BORDER
+        if used:
+            fill_color = (228, 227, 222)
+            border_color = (205, 204, 199)
+            icon_color = (155, 155, 151)
+            title_color = (126, 126, 122)
+            description_color = (158, 158, 154)
+        else:
+            fill_color = PAPER_HOVER if hovered else CELL_FACE
+            border_color = CELL_HOVER_BORDER if hovered else RULE
+            icon_color = MOSS
+            title_color = INK
+            description_color = INK_SOFT
 
-        pygame.draw.rect(
-            self.screen, fill_color, rect, border_radius=10
-        )
+        pygame.draw.rect(self.screen, fill_color, rect, border_radius=10)
         pygame.draw.rect(
             self.screen,
             border_color,
@@ -573,18 +585,29 @@ class Game:
             border_radius=10,
         )
 
-        text_color = INK_SOFT if used else INK
-        label = self.body_font.render(TOOL_LABELS[tool], True, text_color)
-        label_rect = label.get_rect(midleft=(rect.left + 16, rect.centery))
+        icon_center = (rect.left + 31, rect.centery)
+        draw_tool_icon(self.screen, tool, icon_center, icon_color)
+
+        label = self.body_font.render(TOOL_LABELS[tool], True, title_color)
+        label_rect = label.get_rect(
+            midleft=(rect.left + 58, rect.top + 19)
+        )
         self.screen.blit(label, label_rect)
 
-        status = "已使用" if used else "1 次"
-        status_text = self.small_font.render(status, True, INK_SOFT)
-        status_rect = status_text.get_rect(
-            midright=(rect.right - 16, rect.centery)
+        description = self.tiny_font.render(
+            TOOL_DESCRIPTIONS[tool], True, description_color
         )
-        self.screen.blit(status_text, status_rect)
+        description_rect = description.get_rect(
+            midleft=(rect.left + 58, rect.top + 39)
+        )
+        self.screen.blit(description, description_rect)
 
+        if used:
+            status = self.tiny_font.render("已使用", True, description_color)
+            status_rect = status.get_rect(
+                midright=(rect.right - 14, rect.centery)
+            )
+            self.screen.blit(status, status_rect)
     def _draw_status_row(self, label: str, value: str, top: int) -> None:
         left = 590
         label_text = self.small_font.render(label, True, INK_SOFT)
