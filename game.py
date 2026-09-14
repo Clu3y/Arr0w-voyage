@@ -54,6 +54,9 @@ class GameState(Enum):
 
     START = auto()
     PLAYING = auto()
+    LEVEL_COMPLETE = auto()
+    GAME_COMPLETE = auto()
+    LOSE = auto()
 
 
 class Game:
@@ -94,6 +97,28 @@ class Game:
             pygame.Rect(780, 36, 122, 40),
             "退出游戏",
             radius=11,
+            normal_fill=PAPER_LIGHT,
+            hover_fill=PAPER_HOVER,
+            normal_text=INK,
+            hover_text=INK,
+            border_color=CELL_BORDER,
+            border_width=1,
+        )
+        self.result_primary_button = Button(
+            pygame.Rect(310, 410, 220, 58),
+            "进入下一关",
+            radius=12,
+            normal_fill=PAPER_LIGHT,
+            hover_fill=PAPER_HOVER,
+            normal_text=INK,
+            hover_text=INK,
+            border_color=CELL_BORDER,
+            border_width=1,
+        )
+        self.result_secondary_button = Button(
+            pygame.Rect(550, 410, 200, 58),
+            "返回首页",
+            radius=12,
             normal_fill=PAPER_LIGHT,
             hover_fill=PAPER_HOVER,
             normal_text=INK,
@@ -151,6 +176,10 @@ class Game:
                 self.start_game()
             return
 
+        if self.state is not GameState.PLAYING:
+            self._handle_result_click(position)
+            return
+
         if self.restart_button.contains(position):
             self.restart_level()
             return
@@ -168,6 +197,22 @@ class Game:
         if cell is not None:
             self._click_arrow(*cell)
 
+    def _handle_result_click(self, position: tuple[int, int]) -> None:
+        """处理通关或失败界面中的按钮。"""
+        if self.result_secondary_button.contains(position):
+            self.return_to_start()
+            return
+
+        if not self.result_primary_button.contains(position):
+            return
+
+        if self.state is GameState.LEVEL_COMPLETE:
+            self.next_level()
+        elif self.state is GameState.GAME_COMPLETE:
+            self.start_game()
+        elif self.state is GameState.LOSE:
+            self.restart_level()
+
     def update(self, delta_time: float) -> None:
         """更新鼠标悬停、提示和短暂碰撞反馈。"""
         if self.state is GameState.PLAYING:
@@ -180,19 +225,36 @@ class Game:
     def start_game(self) -> None:
         """从第一关开始游戏。"""
         self.current_level_index = 0
-        self._load_level()
+        self._load_level(reset_tools=True)
+
+    def next_level(self) -> None:
+        """进入下一关。"""
+        if self.current_level_index + 1 < len(LEVELS):
+            self.current_level_index += 1
+            self._load_level()
+
+    def return_to_start(self) -> None:
+        """返回开始界面。"""
+        self.state = GameState.START
+        self.round_finished = False
+        self.hovered_cell = None
+        self.effects.reset()
 
     def restart_level(self) -> None:
-        """恢复当前关卡的初始状态。"""
-        self._load_level()
+        """重新开始整局游戏，并回到第一关。"""
+        self.current_level_index = 0
+        self._load_level(reset_tools=True)
 
-    def _load_level(self) -> None:
+    def _load_level(self, *, reset_tools: bool = False) -> None:
         self.board = copy.deepcopy(LEVELS[self.current_level_index])
         self.max_mistakes = 3
         self.mistakes = 0
         self.hovered_cell = None
         self.effects.reset()
-        self.tools.reset()
+        if reset_tools:
+            self.tools.reset()
+        else:
+            self.tools.cancel_selection()
         self.round_finished = False
         self.message = "点击没有被挡住的箭头"
         self.state = GameState.PLAYING
@@ -219,6 +281,7 @@ class Game:
 
         if self.mistakes >= self.max_mistakes:
             self.round_finished = True
+            self.state = GameState.LOSE
             self.message = "失误已用完，请重新开始"
         else:
             self.message = "前方有箭头阻挡，失误加一"
@@ -236,8 +299,13 @@ class Game:
 
         if remaining == 0:
             self.round_finished = True
-            self.message = "本关已清空，通关流程将在下一阶段接入"
             self.audio.play("win")
+            if self.current_level_index == len(LEVELS) - 1:
+                self.state = GameState.GAME_COMPLETE
+                self.message = "最后一关已清空，全部通关"
+            else:
+                self.state = GameState.LEVEL_COMPLETE
+                self.message = "本关已清空，准备进入下一关"
         else:
             self.message = f"箭头飞出，棋盘还剩 {remaining} 支"
             self.audio.play("fly")
@@ -323,8 +391,10 @@ class Game:
         """根据当前状态绘制界面。"""
         if self.state is GameState.START:
             self._draw_start_screen()
-        else:
+        elif self.state is GameState.PLAYING:
             self._draw_game_screen()
+        else:
+            self._draw_result_screen()
 
         pygame.display.flip()
 
@@ -436,6 +506,68 @@ class Game:
         self._draw_board()
         self._draw_sidebar()
         self._draw_toast()
+
+    def _draw_result_screen(self) -> None:
+        """绘制关卡完成、全部通关和失败结果界面。"""
+        self.screen.blit(self.background, (0, 0))
+
+        is_success = self.state in (
+            GameState.LEVEL_COMPLETE,
+            GameState.GAME_COMPLETE,
+        )
+        accent = MOSS if is_success else ACCENT
+        if self.state is GameState.LEVEL_COMPLETE:
+            kicker = "LEVEL COMPLETE"
+            title = "本关通过"
+            description = "棋盘已经清空，下一关正等着你。"
+            primary_text = "进入下一关"
+        elif self.state is GameState.GAME_COMPLETE:
+            kicker = "ALL CLEAR"
+            title = "全部通关"
+            description = "三关全部清空，最后一支箭也顺利离场。"
+            primary_text = "再玩一遍"
+        else:
+            kicker = "TRY AGAIN"
+            title = "本关失败"
+            description = "失误次数已经用完，重新整理思路再出发。"
+            primary_text = "重新开始"
+
+        pygame.draw.line(self.screen, accent, (100, 108), (100, 500), 3)
+        pygame.draw.circle(self.screen, accent, (100, 108), 5)
+
+        brand = self.small_font.render("Arr0w-voyage", True, INK_SOFT)
+        self.screen.blit(brand, (128, 98))
+
+        kicker_text = self.small_font.render(kicker, True, accent)
+        self.screen.blit(kicker_text, (130, 160))
+
+        title_text = self.title_font.render(title, True, INK)
+        self.screen.blit(title_text, (126, 198))
+
+        description_text = self.subtitle_font.render(description, True, INK_SOFT)
+        self.screen.blit(description_text, (130, 292))
+
+        remaining = count_remaining_arrows(self.board)
+        mistakes_left = max(0, self.max_mistakes - self.mistakes)
+        stats_rect = pygame.Rect(132, 342, 728, 46)
+        pygame.draw.rect(self.screen, PAPER_LIGHT, stats_rect, border_radius=10)
+        stats = (
+            f"第 {self.current_level_index + 1:02d} 关   |   "
+            f"剩余箭头 {remaining:02d}   |   "
+            f"剩余失误 {mistakes_left}"
+        )
+        stats_text = self.body_font.render(stats, True, INK)
+        stats_rect_text = stats_text.get_rect(center=stats_rect.center)
+        self.screen.blit(stats_text, stats_rect_text)
+
+        self.result_primary_button.text = primary_text
+        mouse_position = pygame.mouse.get_pos()
+        self.result_primary_button.draw(
+            self.screen, self.small_button_font, mouse_position
+        )
+        self.result_secondary_button.draw(
+            self.screen, self.small_button_font, mouse_position
+        )
 
 
     def _draw_board(self) -> None:
