@@ -213,6 +213,30 @@ def test_result_screen_can_return_to_start(game: Game) -> None:
     assert game.round_finished is False
 
 
+def test_hover_click_sound_only_plays_when_entering_button(
+    game: Game,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    played: list[str] = []
+    monkeypatch.setattr(
+        game.audio,
+        "play",
+        lambda name, volume=0.7: played.append(name),
+    )
+    game.return_to_start()
+
+    game._update_hover_audio(game.start_button.rect.center)
+    game._update_hover_audio(game.start_button.rect.center)
+    assert played == ["click"]
+
+    game._update_hover_audio((0, 0))
+    game._update_hover_audio(game.start_button.rect.center)
+    assert played == ["click", "click"]
+
+    game._handle_click(game.start_button.rect.center)
+    assert played == ["click", "click"]
+
+
 def test_result_primary_button_matches_secondary_style(game: Game) -> None:
     primary = game.result_primary_button
     secondary = game.result_secondary_button

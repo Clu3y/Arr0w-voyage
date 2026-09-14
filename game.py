@@ -141,6 +141,8 @@ class Game:
         self.effects = AnimationState()
         self.tools = ToolState()
         self.audio = AudioManager()
+        self.audio.play_music("bgm")
+        self.hover_target: str | None = None
         self.round_finished = False
         self.pending_result: GameState | None = None
         self.message = "点击没有被挡住的箭头"
@@ -215,10 +217,40 @@ class Game:
         elif self.state is GameState.LOSE:
             self.restart_level()
 
+    def _hover_target_at(self, position: tuple[int, int]) -> str | None:
+        """返回鼠标当前悬停的可交互控件标识。"""
+        if self.state is GameState.START:
+            return "start" if self.start_button.contains(position) else None
+
+        if self.state is GameState.PLAYING:
+            if self.restart_button.contains(position):
+                return "restart"
+            if self.exit_button.contains(position):
+                return "exit"
+            for tool, rect in self.tool_rects.items():
+                if not self.tools.is_used(tool) and rect.collidepoint(position):
+                    return f"tool:{tool.value}"
+            return None
+
+        if self.result_primary_button.contains(position):
+            return "result_primary"
+        if self.result_secondary_button.contains(position):
+            return "result_secondary"
+        return None
+
+    def _update_hover_audio(self, position: tuple[int, int]) -> None:
+        """鼠标进入按钮时播放一次 click 音效。"""
+        target = self._hover_target_at(position)
+        if target is not None and target != self.hover_target:
+            self.audio.play("click", volume=0.55)
+        self.hover_target = target
+
     def update(self, delta_time: float) -> None:
         """更新鼠标悬停、提示和短暂碰撞反馈。"""
+        mouse_position = pygame.mouse.get_pos()
+        self._update_hover_audio(mouse_position)
         if self.state is GameState.PLAYING:
-            self.hovered_cell = self._cell_at(pygame.mouse.get_pos())
+            self.hovered_cell = self._cell_at(mouse_position)
         else:
             self.hovered_cell = None
 
@@ -230,18 +262,23 @@ class Game:
             and not self.effects.has_flying_arrows
             and self.effects.feedback_timer <= 0
         ):
-            self.state = self.pending_result
+            next_state = self.pending_result
+            self.state = next_state
             self.pending_result = None
+            if next_state is GameState.LOSE:
+                self.audio.play("fail", volume=0.72)
 
     def start_game(self) -> None:
         """从第一关开始游戏。"""
         self.current_level_index = 0
+        self.audio.play_music("bgm")
         self._load_level(reset_tools=True, reset_mistakes=True)
 
     def next_level(self) -> None:
         """进入下一关。"""
         if self.current_level_index + 1 < len(LEVELS):
             self.current_level_index += 1
+            self.audio.play_music("bgm")
             self._load_level()
 
     def return_to_start(self) -> None:
@@ -255,6 +292,7 @@ class Game:
     def restart_level(self) -> None:
         """重新开始整局游戏，并回到第一关。"""
         self.current_level_index = 0
+        self.audio.play_music("bgm")
         self._load_level(reset_tools=True, reset_mistakes=True)
 
     def _load_level(
@@ -296,7 +334,7 @@ class Game:
 
         self.mistakes += 1
         self.effects.show_feedback((row, col))
-        self.audio.play("blocked")
+        self.audio.play("miss", volume=0.68)
 
         if self.mistakes >= self.max_mistakes:
             self.round_finished = True
@@ -371,7 +409,6 @@ class Game:
                     self.tools.consume(ToolId.HINT)
                     self.effects.show_hint((row, col))
                     self.message = "提示：这一支箭头可以飞出"
-                    self.audio.play("hint")
                     return
 
         self.message = "暂时没有可直接飞出的箭头"
@@ -386,12 +423,11 @@ class Game:
         self.tools.consume(ToolId.EXTRA_MISTAKE)
         self.message = "恢复一颗红心"
         self.effects.show_toast("恢复一颗红心")
-        self.audio.play("heal")
 
     def _use_remove(self) -> None:
         self.tools.begin_selection(ToolId.REMOVE)
         self.message = "请点击要移出的箭头"
-        self.audio.play("remove")
+
     def _cell_at(self, position: tuple[int, int]) -> tuple[int, int] | None:
         if not BOARD_RECT.collidepoint(position):
             return None

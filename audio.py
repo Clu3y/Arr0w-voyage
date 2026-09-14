@@ -1,8 +1,4 @@
-"""音乐与音效接入模块。
-
-当前没有音频资源，因此默认不加载。后续只需把资源路径补入
-SOUND_FILES，并在创建 AudioManager 时设置 enabled=True。
-"""
+"""背景音乐与音效管理。"""
 
 from __future__ import annotations
 
@@ -11,23 +7,29 @@ from pathlib import Path
 import pygame
 
 
+ASSET_ROOT = Path(__file__).resolve().parent / "assets" / "audio"
+
 SOUND_FILES = {
-    "fly": Path("assets/audio/fly.wav"),
-    "blocked": Path("assets/audio/blocked.wav"),
-    "hint": Path("assets/audio/hint.wav"),
-    "heal": Path("assets/audio/heal.wav"),
-    "remove": Path("assets/audio/remove.wav"),
-    "win": Path("assets/audio/win.wav"),
+    "click": ASSET_ROOT / "click.ogg",
+    "fly": ASSET_ROOT / "fly.ogg",
+    "miss": ASSET_ROOT / "miss.ogg",
+    "win": ASSET_ROOT / "win.ogg",
+    "fail": ASSET_ROOT / "fail.ogg",
+}
+
+MUSIC_FILES = {
+    "bgm": ASSET_ROOT / "bgm.ogg",
 }
 
 
 class AudioManager:
-    """统一管理后续音乐和音效资源。"""
+    """统一管理背景音乐和短音效资源。"""
 
-    def __init__(self, enabled: bool = False) -> None:
+    def __init__(self, enabled: bool = True) -> None:
         self.enabled = enabled
         self._sounds: dict[str, pygame.mixer.Sound] = {}
         self._mixer_ready = False
+        self._music_name: str | None = None
 
         if not self.enabled:
             return
@@ -35,11 +37,13 @@ class AudioManager:
         try:
             if not pygame.mixer.get_init():
                 pygame.mixer.init()
+            pygame.mixer.set_num_channels(24)
             self._mixer_ready = True
         except pygame.error:
             self.enabled = False
 
-    def play(self, name: str) -> None:
+    def play(self, name: str, volume: float = 0.7) -> None:
+        """播放一次短音效。"""
         if not self.enabled or not self._mixer_ready:
             return
 
@@ -54,4 +58,37 @@ class AudioManager:
                 return
             self._sounds[name] = sound
 
+        sound.set_volume(max(0.0, min(1.0, volume)))
         sound.play()
+
+    def play_music(
+        self,
+        name: str,
+        *,
+        volume: float = 0.38,
+        fade_ms: int = 600,
+    ) -> None:
+        """循环播放背景音乐。"""
+        if not self.enabled or not self._mixer_ready:
+            return
+
+        if self._music_name == name and pygame.mixer.music.get_busy():
+            return
+
+        path = MUSIC_FILES.get(name)
+        if path is None or not path.is_file():
+            return
+
+        try:
+            pygame.mixer.music.load(str(path))
+            pygame.mixer.music.set_volume(max(0.0, min(1.0, volume)))
+            pygame.mixer.music.play(-1, fade_ms=fade_ms)
+            self._music_name = name
+        except pygame.error:
+            return
+
+    def stop_music(self, fade_ms: int = 400) -> None:
+        if not self.enabled or not self._mixer_ready:
+            return
+        pygame.mixer.music.fadeout(max(0, fade_ms))
+        self._music_name = None
