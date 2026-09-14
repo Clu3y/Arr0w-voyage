@@ -7,8 +7,11 @@ from enum import Enum, auto
 
 import pygame
 
+from animations import AnimationState
+from audio import AudioManager
 from levels import LEVELS
 from logic import Board, can_fly_out, count_remaining_arrows
+from tools import TOOL_DESCRIPTIONS, TOOL_KEYS, TOOL_LABELS, ToolId, ToolState
 from ui import (
     ACCENT,
     INK,
@@ -21,6 +24,7 @@ from ui import (
     Button,
     create_paper_background,
     draw_arrow,
+    draw_heart,
     draw_tool_icon,
     load_font,
 )
@@ -43,17 +47,6 @@ CELL_HINT = (226, 235, 216)
 CELL_BLOCKED = (248, 231, 225)
 BOARD_BORDER = (157, 155, 146)
 
-TOOL_KEYS = ("hint", "extra_mistake", "remove")
-TOOL_LABELS = {
-    "hint": "提示",
-    "extra_mistake": "增加失误次数",
-    "remove": "移出",
-}
-TOOL_DESCRIPTIONS = {
-    "hint": "高亮可走箭头",
-    "extra_mistake": "剩余失误次数加一",
-    "remove": "移除指向箭头",
-}
 
 
 class GameState(Enum):
@@ -109,9 +102,9 @@ class Game:
             border_width=1,
         )
         self.tool_rects = {
-            "hint": pygame.Rect(590, 162, 312, 56),
-            "extra_mistake": pygame.Rect(590, 222, 312, 56),
-            "remove": pygame.Rect(590, 282, 312, 56),
+            ToolId.HINT: pygame.Rect(590, 162, 312, 56),
+            ToolId.EXTRA_MISTAKE: pygame.Rect(590, 222, 312, 56),
+            ToolId.REMOVE: pygame.Rect(590, 282, 312, 56),
         }
 
         self.current_level_index = 0
@@ -119,14 +112,11 @@ class Game:
         self.mistakes = 0
         self.max_mistakes = 3
         self.hovered_cell: tuple[int, int] | None = None
-        self.feedback_cell: tuple[int, int] | None = None
-        self.feedback_timer = 0.0
-        self.hint_cell: tuple[int, int] | None = None
-        self.hint_timer = 0.0
-        self.pending_tool: str | None = None
+        self.effects = AnimationState()
+        self.tools = ToolState()
+        self.audio = AudioManager()
         self.round_finished = False
         self.message = "点击没有被挡住的箭头"
-        self.tool_uses = {key: 1 for key in TOOL_KEYS}
 
     def run(self) -> None:
         """启动游戏主循环。"""
@@ -185,15 +175,7 @@ class Game:
         else:
             self.hovered_cell = None
 
-        if self.feedback_timer > 0:
-            self.feedback_timer = max(0.0, self.feedback_timer - delta_time)
-            if self.feedback_timer == 0:
-                self.feedback_cell = None
-
-        if self.hint_timer > 0:
-            self.hint_timer = max(0.0, self.hint_timer - delta_time)
-            if self.hint_timer == 0:
-                self.hint_cell = None
+        self.effects.update(delta_time)
 
     def start_game(self) -> None:
         """从第一关开始游戏。"""
@@ -209,25 +191,21 @@ class Game:
         self.max_mistakes = 3
         self.mistakes = 0
         self.hovered_cell = None
-        self.feedback_cell = None
-        self.feedback_timer = 0.0
-        self.hint_cell = None
-        self.hint_timer = 0.0
-        self.pending_tool: str | None = None
+        self.effects.reset()
+        self.tools.reset()
         self.round_finished = False
         self.message = "点击没有被挡住的箭头"
-        self.tool_uses = {key: 1 for key in TOOL_KEYS}
         self.state = GameState.PLAYING
 
     def _click_arrow(self, row: int, col: int) -> None:
-        """处理一次箭头点击，暂以即时消除配合颜色反馈。"""
+        """处理一次箭头点击。"""
         direction = self.board[row][col]
         if direction is None or self.round_finished:
             return
 
-        if self.pending_tool == "remove":
-            self.pending_tool = None
-            self.tool_uses["remove"] = 0
+        if self.tools.pending is ToolId.REMOVE:
+            self.tools.consume(ToolId.REMOVE)
+            self.tools.cancel_selection()
             self._remove_arrow(row, col)
             return
 
@@ -236,8 +214,8 @@ class Game:
             return
 
         self.mistakes += 1
-        self.feedback_cell = (row, col)
-        self.feedback_timer = 0.45
+        self.effects.show_feedback((row, col))
+        self.audio.play("blocked")
 
         if self.mistakes >= self.max_mistakes:
             self.round_finished = True
@@ -251,63 +229,72 @@ class Game:
             return
 
         self.board[row][col] = None
-        self.pending_tool = None
-        self.feedback_cell = None
-        self.hint_cell = None
+        self.tools.cancel_selection()
+        self.effects.clear_feedback()
+        self.effects.clear_hint()
         remaining = count_remaining_arrows(self.board)
 
         if remaining == 0:
             self.round_finished = True
             self.message = "本关已清空，通关流程将在下一阶段接入"
+            self.audio.play("win")
         else:
             self.message = f"箭头飞出，棋盘还剩 {remaining} 支"
+            self.audio.play("fly")
 
-    def _tool_at(self, position: tuple[int, int]) -> str | None:
+    def _tool_at(self, position: tuple[int, int]) -> ToolId | None:
         for tool, rect in self.tool_rects.items():
             if rect.collidepoint(position):
                 return tool
         return None
 
-    def _use_tool(self, tool: str) -> None:
+    def _use_tool(self, tool: ToolId) -> None:
         if self.round_finished:
             self.message = "本关已结束，请重新开始"
             return
 
-        if tool != "remove" and self.pending_tool is not None:
-            self.pending_tool = None
+        if tool is not ToolId.REMOVE and self.tools.pending is not None:
+            self.tools.cancel_selection()
 
-        if self.tool_uses[tool] <= 0:
+        if self.tools.is_used(tool):
             self.message = "这个道具本关已经用过了"
             return
 
-        if tool == "hint":
+        if tool is ToolId.HINT:
             self._use_hint()
-        elif tool == "extra_mistake":
+        elif tool is ToolId.EXTRA_MISTAKE:
             self._use_extra_mistake()
-        elif tool == "remove":
+        elif tool is ToolId.REMOVE:
             self._use_remove()
 
     def _use_hint(self) -> None:
         for row, cells in enumerate(self.board):
             for col, direction in enumerate(cells):
                 if direction is not None and can_fly_out(self.board, row, col):
-                    self.tool_uses["hint"] = 0
-                    self.hint_cell = (row, col)
-                    self.hint_timer = 1.8
+                    self.tools.consume(ToolId.HINT)
+                    self.effects.show_hint((row, col))
                     self.message = "提示：这一支箭头可以飞出"
+                    self.audio.play("hint")
                     return
 
         self.message = "暂时没有可直接飞出的箭头"
 
     def _use_extra_mistake(self) -> None:
-        self.tool_uses["extra_mistake"] = 0
-        self.max_mistakes += 1
-        self.message = "本关剩余失误次数增加一次"
+        if self.mistakes == 0:
+            self.message = "当前是满血状态，暂时不能使用"
+            self.effects.show_toast("满血状态，不能使用增加失误次数")
+            return
+
+        self.mistakes -= 1
+        self.tools.consume(ToolId.EXTRA_MISTAKE)
+        self.message = "恢复一颗红心"
+        self.effects.show_toast("恢复一颗红心")
+        self.audio.play("heal")
 
     def _use_remove(self) -> None:
-        self.pending_tool = "remove"
+        self.tools.begin_selection(ToolId.REMOVE)
         self.message = "请点击要移出的箭头"
-
+        self.audio.play("remove")
     def _cell_at(self, position: tuple[int, int]) -> tuple[int, int] | None:
         if not BOARD_RECT.collidepoint(position):
             return None
@@ -448,6 +435,7 @@ class Game:
 
         self._draw_board()
         self._draw_sidebar()
+        self._draw_toast()
 
 
     def _draw_board(self) -> None:
@@ -478,16 +466,16 @@ class Game:
                     fill_color = PAPER_HOVER
                     border_color = CELL_HOVER_BORDER
 
-                if direction is not None and self.pending_tool == "remove":
+                if direction is not None and self.tools.pending is ToolId.REMOVE:
                     fill_color = CELL_HINT
                     border_color = MOSS
 
-                if direction is not None and self.hint_cell == (row, col):
+                if direction is not None and self.effects.hint_cell == (row, col):
                     fill_color = CELL_HINT
                     border_color = MOSS
                     border_width = 2
 
-                if self.feedback_cell == (row, col):
+                if self.effects.feedback_cell == (row, col):
                     fill_color = CELL_BLOCKED
                     border_color = ACCENT
                     border_width = 2
@@ -513,8 +501,8 @@ class Game:
                     continue
 
                 arrow_offset = 0
-                if self.feedback_cell == (row, col):
-                    arrow_offset = 3 if self.feedback_timer > 0.22 else -3
+                if self.effects.feedback_cell == (row, col):
+                    arrow_offset = 3 if self.effects.feedback_timer > 0.22 else -3
 
                 draw_arrow(
                     self.screen,
@@ -553,9 +541,7 @@ class Game:
 
         remaining = count_remaining_arrows(self.board)
         self._draw_status_row("剩余箭头", f"{remaining:02d}", 424)
-        self._draw_status_row(
-            "剩余失误次数", f"{self.max_mistakes - self.mistakes:02d}", 488
-        )
+        self._draw_heart_row(488)
 
         message_color = INK
         if self.round_finished:
@@ -565,10 +551,10 @@ class Game:
         self.screen.blit(message, (left, 560))
 
     def _draw_tool_button(
-        self, tool: str, mouse_position: tuple[int, int]
+        self, tool: ToolId, mouse_position: tuple[int, int]
     ) -> None:
         rect = self.tool_rects[tool]
-        used = self.tool_uses[tool] <= 0
+        used = self.tools.is_used(tool)
         hovered = not used and rect.collidepoint(mouse_position)
 
         if used:
@@ -594,7 +580,7 @@ class Game:
         )
 
         icon_center = (rect.left + 31, rect.centery)
-        draw_tool_icon(self.screen, tool, icon_center, icon_color)
+        draw_tool_icon(self.screen, tool.value, icon_center, icon_color)
 
         label = self.body_font.render(TOOL_LABELS[tool], True, title_color)
         label_rect = label.get_rect(
@@ -610,12 +596,36 @@ class Game:
         )
         self.screen.blit(description, description_rect)
 
-        status_text = f"X{self.tool_uses[tool]}"
+        status_text = f"X{self.tools.remaining[tool]}"
         status = self.tiny_font.render(status_text, True, description_color)
         status_rect = status.get_rect(
             midright=(rect.right - 14, rect.centery)
         )
         self.screen.blit(status, status_rect)
+
+    def _draw_heart_row(self, top: int) -> None:
+        left = 590
+        label = self.small_font.render("剩余失误", True, INK_SOFT)
+        self.screen.blit(label, (left, top + 6))
+
+        remaining = max(0, self.max_mistakes - self.mistakes)
+        for index in range(self.max_mistakes):
+            center = (770 + index * 48, top + 22)
+            color = ACCENT if index < remaining else (191, 190, 186)
+            draw_heart(self.screen, center, 30, color)
+
+        pygame.draw.line(self.screen, RULE, (left, top + 54), (902, top + 54), 1)
+
+    def _draw_toast(self) -> None:
+        if self.effects.toast_text is None:
+            return
+
+        text = self.small_font.render(self.effects.toast_text, True, PAPER_LIGHT)
+        text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, 113))
+        box_rect = text_rect.inflate(34, 18)
+        pygame.draw.rect(self.screen, INK, box_rect, border_radius=10)
+        self.screen.blit(text, text_rect)
+
     def _draw_status_row(self, label: str, value: str, top: int) -> None:
         left = 590
         label_text = self.small_font.render(label, True, INK_SOFT)

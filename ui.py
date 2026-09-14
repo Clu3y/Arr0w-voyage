@@ -249,3 +249,37 @@ def draw_tool_icon(
             (center_x + 10, center_y - 6),
         ),
     )
+
+def draw_heart(
+    surface: pygame.Surface,
+    center: tuple[int, int],
+    size: int,
+    color: tuple[int, int, int],
+) -> None:
+    """绘制一颗简洁的心形。"""
+    center_x, center_y = center
+    half_width = size * 0.36
+    lobe_radius = size * 0.22
+    lobe_center_y = center_y - size * 0.12
+
+    pygame.draw.circle(
+        surface,
+        color,
+        (round(center_x - size * 0.18), round(lobe_center_y)),
+        round(lobe_radius),
+    )
+    pygame.draw.circle(
+        surface,
+        color,
+        (round(center_x + size * 0.18), round(lobe_center_y)),
+        round(lobe_radius),
+    )
+    pygame.draw.polygon(
+        surface,
+        color,
+        (
+            (round(center_x - half_width), round(center_y - size * 0.04)),
+            (round(center_x + half_width), round(center_y - size * 0.04)),
+            (center_x, round(center_y + size * 0.42)),
+        ),
+    )
