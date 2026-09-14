@@ -52,6 +52,8 @@ python -m venv .venv
 
 音效来自 [Kenney](https://kenney.nl/)，背景音乐来自 [OpenGameArt](https://opengameart.org/)，均为 CC0 素材。详细记录见 `docs/audio-credits.md`。
 
+界面中的箭头、道具、方格、鼠标、提示框和按钮素材同样来自 [Kenney](https://kenney.nl/)，均为 CC0 素材。
+
 ## 关卡设计
 
 | 关卡 | 棋盘 | 箭头数量 | 难度说明 |
@@ -89,6 +91,14 @@ arrow-game/
 ### 游戏界面
 
 ![游戏界面](screenshots/game-screen-preview.png)
+
+### 重新开始确认
+
+![重新开始确认](screenshots/restart-dialog-preview.png)
+
+### 退出游戏确认
+
+![退出游戏确认](screenshots/exit-dialog-preview.png)
 
 ### 箭头飞出动画
 

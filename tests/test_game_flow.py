@@ -213,6 +213,64 @@ def test_result_screen_can_return_to_start(game: Game) -> None:
     assert game.round_finished is False
 
 
+def test_restart_button_requires_confirmation(game: Game) -> None:
+    game.current_level_index = 1
+    game._load_level()
+    game.mistakes = 2
+    game.tools.consume(ToolId.HINT)
+
+    game._handle_click(game.restart_button.rect.center)
+    assert game.dialog_action == "restart"
+    assert game.current_level_index == 1
+
+    game._handle_click(game.dialog_confirm_rect.center)
+    assert game.dialog_action is None
+    assert game.state is GameState.PLAYING
+    assert game.current_level_index == 0
+    assert game.mistakes == 0
+    assert all(remaining == 1 for remaining in game.tools.remaining.values())
+
+
+def test_exit_dialog_cancel_and_close_keep_game_running(game: Game) -> None:
+    game._handle_click(game.exit_button.rect.center)
+    assert game.dialog_action == "exit"
+
+    game._handle_click(game.dialog_cancel_rect.center)
+    assert game.dialog_action is None
+    assert game.running is True
+
+    game._handle_click(game.exit_button.rect.center)
+    game._handle_click(game.dialog_close_rect.center)
+    assert game.dialog_action is None
+    assert game.running is True
+
+
+def test_exit_dialog_confirmation_stops_game(game: Game) -> None:
+    game._handle_click(game.exit_button.rect.center)
+    game._handle_click(game.dialog_confirm_rect.center)
+
+    assert game.dialog_action is None
+    assert game.running is False
+
+
+def test_dialog_blocks_underlying_game_clicks(game: Game) -> None:
+    initial_level = game.current_level_index
+    game._handle_click(game.restart_button.rect.center)
+
+    game._handle_click(game.restart_button.rect.center)
+
+    assert game.dialog_action == "restart"
+    assert game.current_level_index == initial_level
+    assert all(remaining == 1 for remaining in game.tools.remaining.values())
+
+
+def test_dialog_header_overlap_and_close_button_position(game: Game) -> None:
+    overlap = game.dialog_header_rect.bottom - game.dialog_panel_rect.top
+
+    assert overlap == game.dialog_header_rect.height // 2
+    assert game.dialog_panel_rect.contains(game.dialog_close_rect)
+
+
 def test_hover_click_sound_only_plays_when_entering_button(
     game: Game,
     monkeypatch: pytest.MonkeyPatch,

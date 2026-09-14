@@ -11,9 +11,13 @@ from animations import AnimationState
 from audio import AudioManager
 from levels import LEVELS
 from logic import Board, can_fly_out, count_remaining_arrows
-from tools import TOOL_DESCRIPTIONS, TOOL_KEYS, TOOL_LABELS, ToolId, ToolState
+from tools import TOOL_DESCRIPTIONS, TOOL_KEYS, ToolId, ToolState
 from ui import (
     ACCENT,
+    DIALOG_BUTTON_ASSET,
+    DIALOG_CLOSE_ASSET,
+    DIALOG_HEADER_ASSET,
+    DIALOG_PANEL_ASSET,
     DIRECTION_VECTORS,
     INK,
     INK_SOFT,
@@ -22,12 +26,16 @@ from ui import (
     PAPER_HOVER,
     PAPER_LIGHT,
     RULE,
+    TOOL_FRAME_ASSET,
     Button,
     create_paper_background,
     draw_arrow,
+    draw_cell_texture,
     draw_heart,
     draw_tool_icon,
+    get_scaled_background_asset,
     load_font,
+    set_custom_cursor,
 )
 
 
@@ -40,13 +48,13 @@ BOARD_RECT = pygame.Rect(58, 132, 468, 468)
 HEADER_RULE_Y = 98
 FOOTER_RULE_Y = 606
 
-CELL_BED = (222, 219, 209)
-CELL_FACE = (246, 243, 235)
-CELL_BORDER = (214, 213, 205)
-CELL_HOVER_BORDER = (185, 166, 128)
-CELL_HINT = (226, 235, 216)
-CELL_BLOCKED = (248, 231, 225)
-BOARD_BORDER = (157, 155, 146)
+CELL_BED = (216, 201, 177)
+CELL_FACE = (245, 236, 218)
+CELL_BORDER = (207, 190, 163)
+CELL_HOVER_BORDER = (171, 142, 99)
+CELL_HINT = (222, 231, 207)
+CELL_BLOCKED = (244, 219, 207)
+BOARD_BORDER = (141, 124, 99)
 
 
 
@@ -67,6 +75,7 @@ class Game:
         pygame.init()
         self.screen = pygame.display.set_mode(WINDOW_SIZE)
         pygame.display.set_caption("Arr0w-voyage - 一箭又一箭")
+        set_custom_cursor()
         self.clock = pygame.time.Clock()
         self.running = True
         self.state = GameState.START
@@ -127,6 +136,11 @@ class Game:
             border_color=CELL_BORDER,
             border_width=1,
         )
+        self.dialog_panel_rect = pygame.Rect(200, 190, 560, 280)
+        self.dialog_header_rect = pygame.Rect(280, 140, 400, 100)
+        self.dialog_close_rect = pygame.Rect(712, 198, 48, 48)
+        self.dialog_confirm_rect = pygame.Rect(310, 395, 150, 50)
+        self.dialog_cancel_rect = pygame.Rect(500, 395, 150, 50)
         self.tool_rects = {
             ToolId.HINT: pygame.Rect(590, 162, 312, 56),
             ToolId.EXTRA_MISTAKE: pygame.Rect(590, 222, 312, 56),
@@ -143,6 +157,7 @@ class Game:
         self.audio = AudioManager()
         self.audio.play_music("bgm")
         self.hover_target: str | None = None
+        self.dialog_action: str | None = None
         self.round_finished = False
         self.pending_result: GameState | None = None
         self.message = "点击没有被挡住的箭头"
@@ -169,12 +184,20 @@ class Game:
 
     def _handle_keydown(self, key: int) -> None:
         if key == pygame.K_ESCAPE:
+            if self.dialog_action is not None:
+                self.dialog_action = None
+                self.hover_target = None
+                return
             if self.state is GameState.START:
                 self.running = False
             else:
                 self.state = GameState.START
 
     def _handle_click(self, position: tuple[int, int]) -> None:
+        if self.dialog_action is not None:
+            self._handle_dialog_click(position)
+            return
+
         if self.state is GameState.START:
             if self.start_button.contains(position):
                 self.start_game()
@@ -185,11 +208,11 @@ class Game:
             return
 
         if self.restart_button.contains(position):
-            self.restart_level()
+            self._open_dialog("restart")
             return
 
         if self.exit_button.contains(position):
-            self.running = False
+            self._open_dialog("exit")
             return
 
         tool = self._tool_at(position)
@@ -217,8 +240,42 @@ class Game:
         elif self.state is GameState.LOSE:
             self.restart_level()
 
+    def _open_dialog(self, action: str) -> None:
+        self.dialog_action = action
+        self.hover_target = None
+
+    def _handle_dialog_click(self, position: tuple[int, int]) -> None:
+        """处理确认框关闭、取消和确认操作。"""
+        if (
+            self.dialog_close_rect.collidepoint(position)
+            or self.dialog_cancel_rect.collidepoint(position)
+        ):
+            self.dialog_action = None
+            self.hover_target = None
+            return
+
+        if not self.dialog_confirm_rect.collidepoint(position):
+            return
+
+        action = self.dialog_action
+        self.dialog_action = None
+        self.hover_target = None
+        if action == "restart":
+            self.restart_level()
+        elif action == "exit":
+            self.running = False
+
     def _hover_target_at(self, position: tuple[int, int]) -> str | None:
         """返回鼠标当前悬停的可交互控件标识。"""
+        if self.dialog_action is not None:
+            if self.dialog_close_rect.collidepoint(position):
+                return "dialog_close"
+            if self.dialog_confirm_rect.collidepoint(position):
+                return "dialog_confirm"
+            if self.dialog_cancel_rect.collidepoint(position):
+                return "dialog_cancel"
+            return None
+
         if self.state is GameState.START:
             return "start" if self.start_button.contains(position) else None
 
@@ -249,6 +306,10 @@ class Game:
         """更新鼠标悬停、提示和短暂碰撞反馈。"""
         mouse_position = pygame.mouse.get_pos()
         self._update_hover_audio(mouse_position)
+        if self.dialog_action is not None:
+            self.hovered_cell = None
+            return
+
         if self.state is GameState.PLAYING:
             self.hovered_cell = self._cell_at(mouse_position)
         else:
@@ -284,6 +345,7 @@ class Game:
     def return_to_start(self) -> None:
         """返回开始界面。"""
         self.state = GameState.START
+        self.dialog_action = None
         self.round_finished = False
         self.pending_result = None
         self.hovered_cell = None
@@ -302,6 +364,7 @@ class Game:
         reset_mistakes: bool = False,
     ) -> None:
         self.board = copy.deepcopy(LEVELS[self.current_level_index])
+        self.dialog_action = None
         self.max_mistakes = 3
         if reset_mistakes:
             self.mistakes = 0
@@ -458,6 +521,8 @@ class Game:
             self._draw_start_screen()
         elif self.state is GameState.PLAYING:
             self._draw_game_screen()
+            if self.dialog_action is not None:
+                self._draw_dialog()
         else:
             self._draw_result_screen()
 
@@ -572,6 +637,95 @@ class Game:
         self._draw_sidebar()
         self._draw_toast()
 
+    def _draw_dialog(self) -> None:
+        """绘制重新开始或退出游戏确认框。"""
+        overlay = pygame.Surface(WINDOW_SIZE, pygame.SRCALPHA)
+        overlay.fill((42, 28, 17, 150))
+        self.screen.blit(overlay, (0, 0))
+
+        panel = get_scaled_background_asset(
+            DIALOG_PANEL_ASSET,
+            self.dialog_panel_rect.size,
+        )
+        if panel is not None:
+            self.screen.blit(panel, self.dialog_panel_rect.topleft)
+        else:
+            pygame.draw.rect(
+                self.screen,
+                PAPER_LIGHT,
+                self.dialog_panel_rect,
+                border_radius=14,
+            )
+
+        header = get_scaled_background_asset(
+            DIALOG_HEADER_ASSET,
+            self.dialog_header_rect.size,
+        )
+        if header is not None:
+            self.screen.blit(header, self.dialog_header_rect.topleft)
+
+        if self.dialog_action == "restart":
+            title = "重新开始"
+            message_lines = (
+                "确定要重新开始吗？",
+                "当前进度、失误次数和道具都会重置。",
+            )
+        else:
+            title = "退出游戏"
+            message_lines = (
+                "确定要退出游戏吗？",
+                "未完成的关卡进度将不会保存。",
+            )
+
+        title_text = self.heading_font.render(title, True, PAPER_LIGHT)
+        title_rect = title_text.get_rect(center=self.dialog_header_rect.center)
+        self.screen.blit(title_text, title_rect)
+
+        for index, line in enumerate(message_lines):
+            color = INK if index == 0 else INK_SOFT
+            font = self.body_font if index == 0 else self.small_font
+            text = font.render(line, True, color)
+            text_rect = text.get_rect(
+                center=(self.dialog_panel_rect.centerx, 296 + index * 36)
+            )
+            self.screen.blit(text, text_rect)
+
+        mouse_position = pygame.mouse.get_pos()
+        for rect, label in (
+            (self.dialog_confirm_rect, "确认"),
+            (self.dialog_cancel_rect, "取消"),
+        ):
+            button = get_scaled_background_asset(
+                DIALOG_BUTTON_ASSET,
+                rect.size,
+            )
+            if button is not None:
+                self.screen.blit(button, rect.topleft)
+            else:
+                pygame.draw.rect(self.screen, ACCENT, rect, border_radius=8)
+
+            if rect.collidepoint(mouse_position):
+                pygame.draw.rect(
+                    self.screen,
+                    PAPER_LIGHT,
+                    rect,
+                    width=2,
+                    border_radius=8,
+                )
+
+            label_text = self.small_button_font.render(
+                label, True, PAPER_LIGHT
+            )
+            label_rect = label_text.get_rect(center=rect.center)
+            self.screen.blit(label_text, label_rect)
+
+        close_image = get_scaled_background_asset(
+            DIALOG_CLOSE_ASSET,
+            self.dialog_close_rect.size,
+        )
+        if close_image is not None:
+            self.screen.blit(close_image, self.dialog_close_rect.topleft)
+
     def _draw_result_screen(self) -> None:
         """绘制关卡完成、全部通关和失败结果界面。"""
         self.screen.blit(self.background, (0, 0))
@@ -658,31 +812,39 @@ class Game:
                 fill_color = CELL_FACE
                 border_color = CELL_BORDER
                 border_width = 1
+                use_cell_texture = True
 
                 if direction is not None and self.hovered_cell == (row, col):
                     fill_color = PAPER_HOVER
                     border_color = CELL_HOVER_BORDER
+                    use_cell_texture = False
 
                 if direction is not None and self.tools.pending is ToolId.REMOVE:
                     fill_color = CELL_HINT
                     border_color = MOSS
+                    use_cell_texture = False
 
                 if direction is not None and self.effects.hint_cell == (row, col):
                     fill_color = CELL_HINT
                     border_color = MOSS
                     border_width = 2
+                    use_cell_texture = False
 
                 if self.effects.feedback_cell == (row, col):
                     fill_color = CELL_BLOCKED
                     border_color = ACCENT
                     border_width = 2
+                    use_cell_texture = False
 
-                pygame.draw.rect(
-                    self.screen,
-                    fill_color,
-                    inner_rect,
-                    border_radius=7,
-                )
+                if not use_cell_texture or not draw_cell_texture(
+                    self.screen, inner_rect
+                ):
+                    pygame.draw.rect(
+                        self.screen,
+                        fill_color,
+                        inner_rect,
+                        border_radius=7,
+                    )
                 pygame.draw.rect(
                     self.screen,
                     border_color,
@@ -692,9 +854,6 @@ class Game:
                 )
 
                 if direction is None:
-                    pygame.draw.circle(
-                        self.screen, CELL_BORDER, inner_rect.center, 2
-                    )
                     continue
 
                 arrow_offset = 0
@@ -789,45 +948,57 @@ class Game:
             fill_color = (228, 227, 222)
             border_color = (205, 204, 199)
             icon_color = (155, 155, 151)
-            title_color = (126, 126, 122)
-            description_color = (158, 158, 154)
+            description_color = (255, 255, 255)
         else:
             fill_color = PAPER_HOVER if hovered else CELL_FACE
             border_color = CELL_HOVER_BORDER if hovered else RULE
             icon_color = MOSS
-            title_color = INK
-            description_color = INK_SOFT
+            description_color = (255, 255, 255)
 
-        pygame.draw.rect(self.screen, fill_color, rect, border_radius=10)
-        pygame.draw.rect(
-            self.screen,
-            border_color,
-            rect,
-            width=1,
-            border_radius=10,
+        frame = get_scaled_background_asset(
+            TOOL_FRAME_ASSET,
+            rect.size,
+            rotate=90,
         )
+        if frame is not None:
+            self.screen.blit(frame, rect.topleft)
+            if used:
+                disabled_overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+                disabled_overlay.fill((210, 205, 195, 145))
+                self.screen.blit(disabled_overlay, rect.topleft)
+            elif hovered:
+                pygame.draw.rect(
+                    self.screen,
+                    border_color,
+                    rect,
+                    width=2,
+                    border_radius=10,
+                )
+        else:
+            pygame.draw.rect(self.screen, fill_color, rect, border_radius=10)
+            pygame.draw.rect(
+                self.screen,
+                border_color,
+                rect,
+                width=1,
+                border_radius=10,
+            )
 
-        icon_center = (rect.left + 31, rect.centery)
+        icon_center = (rect.left + 38, rect.centery)
         draw_tool_icon(self.screen, tool.value, icon_center, icon_color)
 
-        label = self.body_font.render(TOOL_LABELS[tool], True, title_color)
-        label_rect = label.get_rect(
-            midleft=(rect.left + 58, rect.top + 19)
-        )
-        self.screen.blit(label, label_rect)
-
-        description = self.tiny_font.render(
+        description = self.body_font.render(
             TOOL_DESCRIPTIONS[tool], True, description_color
         )
         description_rect = description.get_rect(
-            midleft=(rect.left + 58, rect.top + 39)
+            midleft=(rect.left + 62, rect.centery)
         )
         self.screen.blit(description, description_rect)
 
         status_text = f"X{self.tools.remaining[tool]}"
         status = self.tiny_font.render(status_text, True, description_color)
         status_rect = status.get_rect(
-            midright=(rect.right - 14, rect.centery)
+            midright=(rect.right - 28, rect.centery)
         )
         self.screen.blit(status, status_rect)
 

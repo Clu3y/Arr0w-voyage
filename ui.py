@@ -10,15 +10,41 @@ from pathlib import Path
 import pygame
 
 
-PAPER = (255, 255, 255)
-PAPER_LIGHT = (246, 241, 228)
-PAPER_DEEP = (225, 216, 193)
-PAPER_HOVER = (232, 222, 198)
+PAPER = (230, 215, 190)
+PAPER_LIGHT = (243, 233, 213)
+PAPER_DEEP = (207, 188, 156)
+PAPER_HOVER = (220, 202, 169)
 INK = (39, 40, 36)
-INK_SOFT = (101, 97, 85)
-RULE = (190, 180, 154)
+INK_SOFT = (99, 88, 70)
+RULE = (188, 170, 139)
 ACCENT = (174, 58, 43)
 MOSS = (78, 99, 67)
+
+UI_ASSET_DIR = Path(__file__).resolve().parent / "assets" / "ui"
+BACKGROUND_ASSET_DIR = Path(__file__).resolve().parent / "assets" / "background"
+ARROW_ASSET_FILES = {
+    "UP": "arrowUp.png",
+    "DOWN": "arrowDown.png",
+    "LEFT": "arrowLeft.png",
+    "RIGHT": "arrowRight.png",
+}
+TOOL_ASSET_FILES = {
+    "hint": "道具1.png",
+    "extra_mistake": "道具2.png",
+    "remove": "道具3.png",
+}
+CELL_ASSET_FILE = "方格.png"
+CURSOR_ASSET_FILE = "鼠标.png"
+DIALOG_PANEL_ASSET = "提示框背景.png"
+DIALOG_HEADER_ASSET = "提示框头部.png"
+DIALOG_CLOSE_ASSET = "关闭按钮.png"
+DIALOG_BUTTON_ASSET = "按钮.png"
+TOOL_FRAME_ASSET = "道具框.png"
+
+_IMAGE_CACHE: dict[str, pygame.Surface] = {}
+_SCALED_IMAGE_CACHE: dict[tuple[str, tuple[int, int], tuple[int, int] | None], pygame.Surface] = {}
+_BACKGROUND_IMAGE_CACHE: dict[str, pygame.Surface] = {}
+_BACKGROUND_SCALED_CACHE: dict[tuple[str, tuple[int, int], int], pygame.Surface] = {}
 
 DIRECTION_VECTORS = {
     "UP": (0, -1),
@@ -44,6 +70,123 @@ def load_font(size: int, bold: bool = False) -> pygame.font.Font:
             except OSError:
                 continue
     return pygame.font.Font(None, size)
+
+
+def load_ui_asset(filename: str) -> pygame.Surface | None:
+    """加载并缓存 assets/ui 中的图片。"""
+    cached = _IMAGE_CACHE.get(filename)
+    if cached is not None:
+        return cached
+
+    path = UI_ASSET_DIR / filename
+    if not path.is_file():
+        return None
+
+    try:
+        image = pygame.image.load(str(path))
+        if pygame.display.get_surface() is not None:
+            image = image.convert_alpha()
+    except pygame.error:
+        return None
+
+    _IMAGE_CACHE[filename] = image
+    return image
+
+
+def _tint_asset(
+    image: pygame.Surface,
+    color: tuple[int, int, int],
+) -> pygame.Surface:
+    """用图片的透明通道为黑色线性素材重新着色。"""
+    tinted = pygame.Surface(image.get_size(), pygame.SRCALPHA)
+    tinted.fill((*color, 0))
+    tinted.blit(image, (0, 0), special_flags=pygame.BLEND_RGBA_MAX)
+    return tinted
+
+
+def get_scaled_ui_asset(
+    filename: str,
+    size: tuple[int, int],
+    *,
+    color: tuple[int, int, int] | None = None,
+) -> pygame.Surface | None:
+    """按显示尺寸缩放 UI 图片，并缓存结果。"""
+    width, height = max(1, size[0]), max(1, size[1])
+    scaled_size = (width, height)
+    cache_key = (filename, scaled_size, color)
+    cached = _SCALED_IMAGE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    image = load_ui_asset(filename)
+    if image is None:
+        return None
+
+    scaled = pygame.transform.smoothscale(image, scaled_size)
+    if color is not None:
+        scaled = _tint_asset(scaled, color)
+
+    _SCALED_IMAGE_CACHE[cache_key] = scaled
+    return scaled
+
+
+def load_background_asset(filename: str) -> pygame.Surface | None:
+    """加载并缓存 assets/background 中的素材。"""
+    cached = _BACKGROUND_IMAGE_CACHE.get(filename)
+    if cached is not None:
+        return cached
+
+    path = BACKGROUND_ASSET_DIR / filename
+    if not path.is_file():
+        return None
+
+    try:
+        image = pygame.image.load(str(path))
+        if pygame.display.get_surface() is not None:
+            image = image.convert_alpha()
+    except pygame.error:
+        return None
+
+    _BACKGROUND_IMAGE_CACHE[filename] = image
+    return image
+
+
+def get_scaled_background_asset(
+    filename: str,
+    size: tuple[int, int],
+    *,
+    rotate: int = 0,
+) -> pygame.Surface | None:
+    """缩放背景素材，可在缩放前旋转。"""
+    width, height = max(1, size[0]), max(1, size[1])
+    scaled_size = (width, height)
+    cache_key = (filename, scaled_size, rotate)
+    cached = _BACKGROUND_SCALED_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    image = load_background_asset(filename)
+    if image is None:
+        return None
+
+    if rotate:
+        image = pygame.transform.rotate(image, rotate)
+    scaled = pygame.transform.scale(image, scaled_size)
+    _BACKGROUND_SCALED_CACHE[cache_key] = scaled
+    return scaled
+
+
+def set_custom_cursor() -> bool:
+    """设置自定义鼠标，不支持时安全回退到系统鼠标。"""
+    image = load_ui_asset(CURSOR_ASSET_FILE)
+    if image is None:
+        return False
+    image = pygame.transform.smoothscale(image, (10, 11))
+    try:
+        pygame.mouse.set_cursor(pygame.cursors.Cursor((1, 1), image))
+    except pygame.error:
+        return False
+    return True
 
 
 class Button:
@@ -106,7 +249,7 @@ class Button:
 
 
 def create_paper_background(size: tuple[int, int]) -> pygame.Surface:
-    """生成带有轻微纸张颗粒感的背景。"""
+    """生成带有轻微颗粒感的暖棕色纸张背景。"""
     surface = pygame.Surface(size)
     surface.fill(PAPER)
 
@@ -115,7 +258,7 @@ def create_paper_background(size: tuple[int, int]) -> pygame.Surface:
     for _ in range(width * height // 300):
         x = rng.randrange(width)
         y = rng.randrange(height)
-        tone = rng.choice(((250, 250, 249), (255, 255, 255), (247, 247, 246)))
+        tone = rng.choice(((233, 219, 196), (226, 210, 183), (237, 225, 202)))
         surface.set_at((x, y), tone)
 
     return surface
@@ -133,6 +276,18 @@ def draw_arrow(
     vector_x, vector_y = DIRECTION_VECTORS[direction]
     center_x = center[0] + vector_x * offset
     center_y = center[1] + vector_y * offset
+
+    asset_name = ARROW_ASSET_FILES.get(direction)
+    if asset_name is not None:
+        image = get_scaled_ui_asset(
+            asset_name,
+            (size, size),
+            color=color,
+        )
+        if image is not None:
+            rect = image.get_rect(center=(center_x, center_y))
+            surface.blit(image, rect)
+            return
 
     length = size * 0.50
     head_length = size * 0.20
@@ -174,6 +329,18 @@ def draw_tool_icon(
 ) -> None:
     """绘制提示、增加失误次数和移出道具的线性图标。"""
     center_x, center_y = center
+
+    asset_name = TOOL_ASSET_FILES.get(tool)
+    if asset_name is not None:
+        image = get_scaled_ui_asset(
+            asset_name,
+            (30, 30),
+            color=color,
+        )
+        if image is not None:
+            rect = image.get_rect(center=(center_x, center_y))
+            surface.blit(image, rect)
+            return
 
     if tool == "hint":
         pygame.draw.circle(surface, color, (center_x, center_y - 3), 8, 2)
@@ -249,6 +416,15 @@ def draw_tool_icon(
             (center_x + 10, center_y - 6),
         ),
     )
+
+
+def draw_cell_texture(surface: pygame.Surface, rect: pygame.Rect) -> bool:
+    """绘制方格素材，加载失败时保留现有底色。"""
+    image = get_scaled_ui_asset(CELL_ASSET_FILE, rect.size)
+    if image is None:
+        return False
+    surface.blit(image, rect.topleft)
+    return True
 
 def draw_heart(
     surface: pygame.Surface,
