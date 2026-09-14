@@ -26,6 +26,7 @@ def solve_current_level(game: Game) -> None:
             if direction is not None and can_fly_out(game.board, row, col)
         )
         game._click_arrow(*target)
+    game.update(1.0)
 
 
 def lose_current_level(game: Game) -> None:
@@ -38,6 +39,7 @@ def lose_current_level(game: Game) -> None:
     )
     for _ in range(game.max_mistakes):
         game._click_arrow(*target)
+    game.update(0.5)
 
 
 @pytest.fixture
@@ -57,6 +59,48 @@ def test_clearing_level_opens_complete_screen(game: Game) -> None:
     assert game.current_level_index == 0
 
 
+def test_last_arrow_finishes_flying_before_result_screen(game: Game) -> None:
+    while count_remaining_arrows(game.board) > 1:
+        target = next(
+            (row, col)
+            for row, cells in enumerate(game.board)
+            for col, direction in enumerate(cells)
+            if direction is not None and can_fly_out(game.board, row, col)
+        )
+        game._click_arrow(*target)
+
+    final_target = next(
+        (row, col)
+        for row, cells in enumerate(game.board)
+        for col, direction in enumerate(cells)
+        if direction is not None and can_fly_out(game.board, row, col)
+    )
+    game._click_arrow(*final_target)
+
+    assert game.state is GameState.PLAYING
+    assert game.pending_result is GameState.LEVEL_COMPLETE
+    assert game.effects.has_flying_arrows is True
+
+    game.update(0.5)
+    assert game.state is GameState.LEVEL_COMPLETE
+    assert game.pending_result is None
+
+
+def test_flying_arrow_can_be_drawn_midflight(game: Game) -> None:
+    target = next(
+        (row, col)
+        for row, cells in enumerate(game.board)
+        for col, direction in enumerate(cells)
+        if direction is not None and can_fly_out(game.board, row, col)
+    )
+    game._click_arrow(*target)
+    game.update(0.18)
+
+    assert game.effects.has_flying_arrows is True
+    game.draw()
+    assert pygame.display.get_surface() is not None
+
+
 def test_next_level_button_preserves_consumed_tools(game: Game) -> None:
     assert game.tools.consume(ToolId.HINT) is True
     solve_current_level(game)
@@ -70,6 +114,28 @@ def test_next_level_button_preserves_consumed_tools(game: Game) -> None:
     assert game.tools.remaining[ToolId.HINT] == 0
     assert game.tools.remaining[ToolId.EXTRA_MISTAKE] == 1
     assert game.tools.remaining[ToolId.REMOVE] == 1
+
+
+def test_next_level_preserves_remaining_mistakes(game: Game) -> None:
+    blocked = next(
+        (row, col)
+        for row, cells in enumerate(game.board)
+        for col, direction in enumerate(cells)
+        if direction is not None and not can_fly_out(game.board, row, col)
+    )
+    game._click_arrow(*blocked)
+    game.update(0.5)
+    game._click_arrow(*blocked)
+    game.update(0.5)
+    assert game.mistakes == 2
+
+    solve_current_level(game)
+    game._handle_click(game.result_primary_button.rect.center)
+
+    assert game.state is GameState.PLAYING
+    assert game.current_level_index == 1
+    assert game.mistakes == 2
+    assert game.max_mistakes - game.mistakes == 1
 
 
 def test_final_level_opens_game_complete_and_can_replay(game: Game) -> None:
@@ -117,6 +183,26 @@ def test_mistakes_exhausted_opens_lose_screen_and_retries(game: Game) -> None:
     assert game.board == initial_board
     assert game.mistakes == 0
     assert game.round_finished is False
+
+
+def test_last_collision_feedback_finishes_before_lose_screen(game: Game) -> None:
+    target = next(
+        (row, col)
+        for row, cells in enumerate(game.board)
+        for col, direction in enumerate(cells)
+        if direction is not None and not can_fly_out(game.board, row, col)
+    )
+    for _ in range(game.max_mistakes - 1):
+        game._click_arrow(*target)
+        game.update(0.5)
+
+    game._click_arrow(*target)
+    assert game.state is GameState.PLAYING
+    assert game.pending_result is GameState.LOSE
+    assert game.effects.feedback_cell == target
+
+    game.update(0.5)
+    assert game.state is GameState.LOSE
 
 
 def test_result_screen_can_return_to_start(game: Game) -> None:

@@ -14,6 +14,7 @@ from logic import Board, can_fly_out, count_remaining_arrows
 from tools import TOOL_DESCRIPTIONS, TOOL_KEYS, TOOL_LABELS, ToolId, ToolState
 from ui import (
     ACCENT,
+    DIRECTION_VECTORS,
     INK,
     INK_SOFT,
     MOSS,
@@ -141,6 +142,7 @@ class Game:
         self.tools = ToolState()
         self.audio = AudioManager()
         self.round_finished = False
+        self.pending_result: GameState | None = None
         self.message = "点击没有被挡住的箭头"
 
     def run(self) -> None:
@@ -221,11 +223,20 @@ class Game:
             self.hovered_cell = None
 
         self.effects.update(delta_time)
+        if (
+            self.state is GameState.PLAYING
+            and self.round_finished
+            and self.pending_result is not None
+            and not self.effects.has_flying_arrows
+            and self.effects.feedback_timer <= 0
+        ):
+            self.state = self.pending_result
+            self.pending_result = None
 
     def start_game(self) -> None:
         """从第一关开始游戏。"""
         self.current_level_index = 0
-        self._load_level(reset_tools=True)
+        self._load_level(reset_tools=True, reset_mistakes=True)
 
     def next_level(self) -> None:
         """进入下一关。"""
@@ -237,18 +248,25 @@ class Game:
         """返回开始界面。"""
         self.state = GameState.START
         self.round_finished = False
+        self.pending_result = None
         self.hovered_cell = None
         self.effects.reset()
 
     def restart_level(self) -> None:
         """重新开始整局游戏，并回到第一关。"""
         self.current_level_index = 0
-        self._load_level(reset_tools=True)
+        self._load_level(reset_tools=True, reset_mistakes=True)
 
-    def _load_level(self, *, reset_tools: bool = False) -> None:
+    def _load_level(
+        self,
+        *,
+        reset_tools: bool = False,
+        reset_mistakes: bool = False,
+    ) -> None:
         self.board = copy.deepcopy(LEVELS[self.current_level_index])
         self.max_mistakes = 3
-        self.mistakes = 0
+        if reset_mistakes:
+            self.mistakes = 0
         self.hovered_cell = None
         self.effects.reset()
         if reset_tools:
@@ -256,6 +274,7 @@ class Game:
         else:
             self.tools.cancel_selection()
         self.round_finished = False
+        self.pending_result = None
         self.message = "点击没有被挡住的箭头"
         self.state = GameState.PLAYING
 
@@ -268,7 +287,7 @@ class Game:
         if self.tools.pending is ToolId.REMOVE:
             self.tools.consume(ToolId.REMOVE)
             self.tools.cancel_selection()
-            self._remove_arrow(row, col)
+            self._remove_arrow(row, col, animate=False)
             return
 
         if can_fly_out(self.board, row, col):
@@ -281,16 +300,25 @@ class Game:
 
         if self.mistakes >= self.max_mistakes:
             self.round_finished = True
-            self.state = GameState.LOSE
+            self.pending_result = GameState.LOSE
             self.message = "失误已用完，请重新开始"
         else:
+            self.effects.show_toast("前方有箭头阻挡，失误加一", duration=1.0)
             self.message = "前方有箭头阻挡，失误加一"
 
-    def _remove_arrow(self, row: int, col: int) -> None:
+    def _remove_arrow(
+        self,
+        row: int,
+        col: int,
+        *,
+        animate: bool = True,
+    ) -> None:
         direction = self.board[row][col]
         if direction is None:
             return
 
+        if animate:
+            self.effects.start_fly((row, col), direction)
         self.board[row][col] = None
         self.tools.cancel_selection()
         self.effects.clear_feedback()
@@ -301,13 +329,14 @@ class Game:
             self.round_finished = True
             self.audio.play("win")
             if self.current_level_index == len(LEVELS) - 1:
-                self.state = GameState.GAME_COMPLETE
+                self.pending_result = GameState.GAME_COMPLETE
                 self.message = "最后一关已清空，全部通关"
             else:
-                self.state = GameState.LEVEL_COMPLETE
+                self.pending_result = GameState.LEVEL_COMPLETE
                 self.message = "本关已清空，准备进入下一关"
         else:
-            self.message = f"箭头飞出，棋盘还剩 {remaining} 支"
+            action = "飞出" if animate else "移出"
+            self.message = f"箭头{action}，棋盘还剩 {remaining} 支"
             self.audio.play("fly")
 
     def _tool_at(self, position: tuple[int, int]) -> ToolId | None:
@@ -644,6 +673,8 @@ class Game:
                     offset=arrow_offset,
                 )
 
+        self._draw_flying_arrows()
+
         pygame.draw.rect(
             self.screen,
             BOARD_BORDER,
@@ -651,6 +682,35 @@ class Game:
             width=2,
             border_radius=18,
         )
+
+    def _draw_flying_arrows(self) -> None:
+        """绘制正在离开棋盘的箭头。"""
+        rows = len(self.board)
+        cols = len(self.board[0])
+        cell_width = BOARD_RECT.width / cols
+        cell_height = BOARD_RECT.height / rows
+        base_size = min(cell_width, cell_height) * 0.72
+
+        for arrow in self.effects.flying_arrows:
+            start_x, start_y = self._cell_rect(arrow.row, arrow.col).center
+            vector_x, vector_y = DIRECTION_VECTORS[arrow.direction]
+
+            if vector_x > 0:
+                distance = BOARD_RECT.right - start_x + 100
+            elif vector_x < 0:
+                distance = start_x - BOARD_RECT.left + 100
+            elif vector_y > 0:
+                distance = BOARD_RECT.bottom - start_y + 100
+            else:
+                distance = start_y - BOARD_RECT.top + 100
+
+            progress = arrow.progress
+            center = (
+                int(start_x + vector_x * distance * progress),
+                int(start_y + vector_y * distance * progress),
+            )
+            size = max(12, int(base_size * (1.0 - progress * 0.30)))
+            draw_arrow(self.screen, center, arrow.direction, size)
 
     def _draw_sidebar(self) -> None:
         left = 590
