@@ -78,6 +78,7 @@ class Game:
         self.title_font = load_font(70, bold=True)
         self.heading_font = load_font(30, bold=True)
         self.subtitle_font = load_font(24)
+        self.start_subtitle_font = load_font(36, bold=True)
         self.body_font = load_font(21)
         self.small_font = load_font(17)
         self.tiny_font = load_font(14)
@@ -86,8 +87,19 @@ class Game:
 
         self.start_button = Button(pygame.Rect(112, 450, 210, 58), "开始游戏")
         self.restart_button = Button(
-            pygame.Rect(790, 36, 122, 40),
+            pygame.Rect(646, 36, 122, 40),
             "重新开始",
+            radius=11,
+            normal_fill=PAPER_LIGHT,
+            hover_fill=PAPER_HOVER,
+            normal_text=INK,
+            hover_text=INK,
+            border_color=CELL_BORDER,
+            border_width=1,
+        )
+        self.exit_button = Button(
+            pygame.Rect(780, 36, 122, 40),
+            "退出游戏",
             radius=11,
             normal_fill=PAPER_LIGHT,
             hover_fill=PAPER_HOVER,
@@ -111,6 +123,7 @@ class Game:
         self.feedback_timer = 0.0
         self.hint_cell: tuple[int, int] | None = None
         self.hint_timer = 0.0
+        self.pending_tool: str | None = None
         self.round_finished = False
         self.message = "点击没有被挡住的箭头"
         self.tool_uses = {key: 1 for key in TOOL_KEYS}
@@ -150,6 +163,10 @@ class Game:
 
         if self.restart_button.contains(position):
             self.restart_level()
+            return
+
+        if self.exit_button.contains(position):
+            self.running = False
             return
 
         tool = self._tool_at(position)
@@ -196,6 +213,7 @@ class Game:
         self.feedback_timer = 0.0
         self.hint_cell = None
         self.hint_timer = 0.0
+        self.pending_tool: str | None = None
         self.round_finished = False
         self.message = "点击没有被挡住的箭头"
         self.tool_uses = {key: 1 for key in TOOL_KEYS}
@@ -205,6 +223,12 @@ class Game:
         """处理一次箭头点击，暂以即时消除配合颜色反馈。"""
         direction = self.board[row][col]
         if direction is None or self.round_finished:
+            return
+
+        if self.pending_tool == "remove":
+            self.pending_tool = None
+            self.tool_uses["remove"] = 0
+            self._remove_arrow(row, col)
             return
 
         if can_fly_out(self.board, row, col):
@@ -227,6 +251,7 @@ class Game:
             return
 
         self.board[row][col] = None
+        self.pending_tool = None
         self.feedback_cell = None
         self.hint_cell = None
         remaining = count_remaining_arrows(self.board)
@@ -247,6 +272,9 @@ class Game:
         if self.round_finished:
             self.message = "本关已结束，请重新开始"
             return
+
+        if tool != "remove" and self.pending_tool is not None:
+            self.pending_tool = None
 
         if self.tool_uses[tool] <= 0:
             self.message = "这个道具本关已经用过了"
@@ -277,17 +305,8 @@ class Game:
         self.message = "本关剩余失误次数增加一次"
 
     def _use_remove(self) -> None:
-        if self.hovered_cell is None:
-            self.message = "先把鼠标移到要移出的箭头上"
-            return
-
-        row, col = self.hovered_cell
-        if self.board[row][col] is None:
-            self.message = "请把鼠标移到箭头上"
-            return
-
-        self.tool_uses["remove"] = 0
-        self._remove_arrow(row, col)
+        self.pending_tool = "remove"
+        self.message = "请点击要移出的箭头"
 
     def _cell_at(self, position: tuple[int, int]) -> tuple[int, int] | None:
         if not BOARD_RECT.collidepoint(position):
@@ -329,11 +348,11 @@ class Game:
         pygame.draw.line(self.screen, ACCENT, (84, 82), (84, 544), 3)
         pygame.draw.circle(self.screen, ACCENT, (84, 82), 5)
 
-        title = self.title_font.render("一箭又一箭", True, INK)
-        self.screen.blit(title, (116, 88))
+        title = self.title_font.render("Arr0w-voyage", True, INK)
+        self.screen.blit(title, (116, 68))
 
-        subtitle = self.subtitle_font.render("点击式箭头解谜", True, ACCENT)
-        self.screen.blit(subtitle, (120, 174))
+        subtitle = self.start_subtitle_font.render("一箭又一箭", True, ACCENT)
+        self.screen.blit(subtitle, (120, 160))
 
         line = self.body_font.render(
             "观察箭头方向，找到一条通向棋盘外的路。", True, INK_SOFT
@@ -351,9 +370,6 @@ class Game:
 
         mouse_position = pygame.mouse.get_pos()
         self.start_button.draw(self.screen, self.button_font, mouse_position)
-
-        footer = self.small_font.render("鼠标点击开始    Esc 退出", True, INK_SOFT)
-        self.screen.blit(footer, (120, 548))
 
         self._draw_sample_board()
 
@@ -420,7 +436,9 @@ class Game:
         self.restart_button.draw(
             self.screen, self.small_button_font, mouse_position
         )
-
+        self.exit_button.draw(
+            self.screen, self.small_button_font, mouse_position
+        )
         pygame.draw.line(
             self.screen, INK, (58, HEADER_RULE_Y), (902, HEADER_RULE_Y), 1
         )
@@ -431,10 +449,6 @@ class Game:
         self._draw_board()
         self._draw_sidebar()
 
-        footer = self.small_font.render(
-            "点击箭头    Esc 返回开始界面", True, INK_SOFT
-        )
-        self.screen.blit(footer, (58, 617))
 
     def _draw_board(self) -> None:
         pygame.draw.rect(
@@ -463,6 +477,10 @@ class Game:
                 if direction is not None and self.hovered_cell == (row, col):
                     fill_color = PAPER_HOVER
                     border_color = CELL_HOVER_BORDER
+
+                if direction is not None and self.pending_tool == "remove":
+                    fill_color = CELL_HINT
+                    border_color = MOSS
 
                 if direction is not None and self.hint_cell == (row, col):
                     fill_color = CELL_HINT
@@ -516,7 +534,7 @@ class Game:
 
     def _draw_sidebar(self) -> None:
         left = 590
-        tools_title = self.small_font.render("每关一次 / 道具", True, INK_SOFT)
+        tools_title = self.small_font.render("道具", True, INK_SOFT)
         self.screen.blit(tools_title, (left, 120))
 
         mouse_position = pygame.mouse.get_pos()
@@ -592,12 +610,12 @@ class Game:
         )
         self.screen.blit(description, description_rect)
 
-        if used:
-            status = self.tiny_font.render("已使用", True, description_color)
-            status_rect = status.get_rect(
-                midright=(rect.right - 14, rect.centery)
-            )
-            self.screen.blit(status, status_rect)
+        status_text = f"X{self.tool_uses[tool]}"
+        status = self.tiny_font.render(status_text, True, description_color)
+        status_rect = status.get_rect(
+            midright=(rect.right - 14, rect.centery)
+        )
+        self.screen.blit(status, status_rect)
     def _draw_status_row(self, label: str, value: str, top: int) -> None:
         left = 590
         label_text = self.small_font.render(label, True, INK_SOFT)

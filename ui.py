@@ -10,7 +10,7 @@ from pathlib import Path
 import pygame
 
 
-PAPER = (238, 232, 216)
+PAPER = (255, 255, 255)
 PAPER_LIGHT = (246, 241, 228)
 PAPER_DEEP = (225, 216, 193)
 PAPER_HOVER = (232, 222, 198)
@@ -115,7 +115,7 @@ def create_paper_background(size: tuple[int, int]) -> pygame.Surface:
     for _ in range(width * height // 300):
         x = rng.randrange(width)
         y = rng.randrange(height)
-        tone = rng.choice(((224, 216, 194), (245, 240, 226), (220, 212, 190)))
+        tone = rng.choice(((250, 250, 249), (255, 255, 255), (247, 247, 246)))
         surface.set_at((x, y), tone)
 
     return surface
