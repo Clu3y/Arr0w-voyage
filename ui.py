@@ -40,9 +40,13 @@ DIALOG_HEADER_ASSET = "提示框头部.png"
 DIALOG_CLOSE_ASSET = "关闭按钮.png"
 DIALOG_BUTTON_ASSET = "按钮.png"
 TOOL_FRAME_ASSET = "道具框.png"
+GITHUB_ICON_FILE = "github.jpeg"
+START_LOGO_FILE = "开始界面Logo.png"
+GAME_LOGO_FILE = "游戏界面Logo.png"
 
 _IMAGE_CACHE: dict[str, pygame.Surface] = {}
 _SCALED_IMAGE_CACHE: dict[tuple[str, tuple[int, int], tuple[int, int] | None], pygame.Surface] = {}
+_CROPPED_IMAGE_CACHE: dict[tuple[str, tuple[int, int]], pygame.Surface] = {}
 _BACKGROUND_IMAGE_CACHE: dict[str, pygame.Surface] = {}
 _BACKGROUND_SCALED_CACHE: dict[tuple[str, tuple[int, int], int], pygame.Surface] = {}
 
@@ -72,6 +76,18 @@ def load_font(size: int, bold: bool = False) -> pygame.font.Font:
     return pygame.font.Font(None, size)
 
 
+def _prepare_github_image(image: pygame.Surface) -> pygame.Surface:
+    """把白底 GitHub 图片转换为透明背景的黑色图标。"""
+    prepared = pygame.Surface(image.get_size(), pygame.SRCALPHA)
+    for x in range(image.get_width()):
+        for y in range(image.get_height()):
+            red, green, blue, _ = image.get_at((x, y))
+            luminance = 0.299 * red + 0.587 * green + 0.114 * blue
+            alpha = min(255, max(0, round(255 - luminance)))
+            prepared.set_at((x, y), (0, 0, 0, alpha))
+    return prepared
+
+
 def load_ui_asset(filename: str) -> pygame.Surface | None:
     """加载并缓存 assets/ui 中的图片。"""
     cached = _IMAGE_CACHE.get(filename)
@@ -86,6 +102,8 @@ def load_ui_asset(filename: str) -> pygame.Surface | None:
         image = pygame.image.load(str(path))
         if pygame.display.get_surface() is not None:
             image = image.convert_alpha()
+        if filename == GITHUB_ICON_FILE:
+            image = _prepare_github_image(image)
     except pygame.error:
         return None
 
@@ -127,6 +145,36 @@ def get_scaled_ui_asset(
         scaled = _tint_asset(scaled, color)
 
     _SCALED_IMAGE_CACHE[cache_key] = scaled
+    return scaled
+
+
+def get_cropped_scaled_ui_asset(
+    filename: str,
+    max_size: tuple[int, int],
+) -> pygame.Surface | None:
+    """按内容边界裁切 UI 图片，并等比缩放到指定范围内。"""
+    max_width, max_height = max(1, max_size[0]), max(1, max_size[1])
+    cache_key = (filename, (max_width, max_height))
+    cached = _CROPPED_IMAGE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    image = load_ui_asset(filename)
+    if image is None:
+        return None
+
+    bounds = image.get_bounding_rect(min_alpha=8)
+    if bounds.width == 0 or bounds.height == 0:
+        return None
+    cropped = image.subsurface(bounds).copy()
+
+    scale = min(max_width / bounds.width, max_height / bounds.height)
+    target_size = (
+        max(1, round(bounds.width * scale)),
+        max(1, round(bounds.height * scale)),
+    )
+    scaled = pygame.transform.smoothscale(cropped, target_size)
+    _CROPPED_IMAGE_CACHE[cache_key] = scaled
     return scaled
 
 
@@ -425,6 +473,69 @@ def draw_cell_texture(surface: pygame.Surface, rect: pygame.Rect) -> bool:
         return False
     surface.blit(image, rect.topleft)
     return True
+
+
+def draw_github_icon(
+    surface: pygame.Surface,
+    center: tuple[int, int],
+    size: int,
+    color: tuple[int, int, int] = INK,
+) -> None:
+    """绘制简洁的 GitHub 猫咪图标。"""
+    center_x, center_y = center
+    radius = max(5, size // 2)
+    unit = size / 20
+    foreground = (255, 255, 255)
+
+    pygame.draw.circle(surface, color, center, radius)
+    pygame.draw.polygon(
+        surface,
+        foreground,
+        (
+            (round(center_x - 6 * unit), round(center_y - 3 * unit)),
+            (round(center_x - 4 * unit), round(center_y - 8 * unit)),
+            (round(center_x - 1 * unit), round(center_y - 5 * unit)),
+        ),
+    )
+    pygame.draw.polygon(
+        surface,
+        foreground,
+        (
+            (round(center_x + 6 * unit), round(center_y - 3 * unit)),
+            (round(center_x + 4 * unit), round(center_y - 8 * unit)),
+            (round(center_x + 1 * unit), round(center_y - 5 * unit)),
+        ),
+    )
+    pygame.draw.ellipse(
+        surface,
+        foreground,
+        pygame.Rect(
+            round(center_x - 7 * unit),
+            round(center_y - 3 * unit),
+            round(14 * unit),
+            round(10 * unit),
+        ),
+    )
+    pygame.draw.line(
+        surface,
+        foreground,
+        (round(center_x + 6 * unit), round(center_y + 2 * unit)),
+        (round(center_x + 9 * unit), round(center_y - 2 * unit)),
+        max(1, round(2 * unit)),
+    )
+    eye_radius = max(1, round(1.2 * unit))
+    pygame.draw.circle(
+        surface,
+        color,
+        (round(center_x - 2.5 * unit), round(center_y + 1 * unit)),
+        eye_radius,
+    )
+    pygame.draw.circle(
+        surface,
+        color,
+        (round(center_x + 2.5 * unit), round(center_y + 1 * unit)),
+        eye_radius,
+    )
 
 def draw_heart(
     surface: pygame.Surface,

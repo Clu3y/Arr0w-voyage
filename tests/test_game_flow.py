@@ -10,7 +10,7 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 import pygame
 import pytest
 
-from game import Game, GameState
+from game import Game, GameState, REPOSITORY_URL
 from levels import LEVELS
 from logic import can_fly_out, count_remaining_arrows
 from tools import ToolId
@@ -293,6 +293,25 @@ def test_hover_click_sound_only_plays_when_entering_button(
 
     game._handle_click(game.start_button.rect.center)
     assert played == ["click", "click"]
+
+
+def test_author_link_opens_repository(
+    game: Game,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr("game.webbrowser.open", opened.append)
+    game.return_to_start()
+
+    game._handle_click(game.author_link_rect.center)
+
+    assert opened == [REPOSITORY_URL]
+
+
+def test_author_link_is_hover_target(game: Game) -> None:
+    game.return_to_start()
+
+    assert game._hover_target_at(game.author_link_rect.center) == "author"
 
 
 def test_result_primary_button_matches_secondary_style(game: Game) -> None:

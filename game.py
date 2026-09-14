@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import webbrowser
 from enum import Enum, auto
 
 import pygame
@@ -19,6 +20,8 @@ from ui import (
     DIALOG_HEADER_ASSET,
     DIALOG_PANEL_ASSET,
     DIRECTION_VECTORS,
+    GAME_LOGO_FILE,
+    GITHUB_ICON_FILE,
     INK,
     INK_SOFT,
     MOSS,
@@ -26,17 +29,24 @@ from ui import (
     PAPER_HOVER,
     PAPER_LIGHT,
     RULE,
+    START_LOGO_FILE,
     TOOL_FRAME_ASSET,
     Button,
     create_paper_background,
     draw_arrow,
     draw_cell_texture,
+    draw_github_icon,
     draw_heart,
     draw_tool_icon,
     get_scaled_background_asset,
+    get_cropped_scaled_ui_asset,
     load_font,
     set_custom_cursor,
 )
+
+
+AUTHOR_NAME = "Clu3y"
+REPOSITORY_URL = "https://github.com/Clu3y/Arr0w-voyage"
 
 
 WINDOW_WIDTH = 960
@@ -92,6 +102,7 @@ class Game:
         self.small_button_font = load_font(18, bold=True)
 
         self.start_button = Button(pygame.Rect(112, 450, 210, 58), "开始游戏")
+        self.author_link_rect = pygame.Rect(690, 574, 220, 38)
         self.restart_button = Button(
             pygame.Rect(646, 36, 122, 40),
             "重新开始",
@@ -201,6 +212,8 @@ class Game:
         if self.state is GameState.START:
             if self.start_button.contains(position):
                 self.start_game()
+            elif self.author_link_rect.collidepoint(position):
+                self._open_repository()
             return
 
         if self.state is not GameState.PLAYING:
@@ -244,6 +257,9 @@ class Game:
         self.dialog_action = action
         self.hover_target = None
 
+    def _open_repository(self) -> None:
+        webbrowser.open(REPOSITORY_URL)
+
     def _handle_dialog_click(self, position: tuple[int, int]) -> None:
         """处理确认框关闭、取消和确认操作。"""
         if (
@@ -277,7 +293,11 @@ class Game:
             return None
 
         if self.state is GameState.START:
-            return "start" if self.start_button.contains(position) else None
+            if self.start_button.contains(position):
+                return "start"
+            if self.author_link_rect.collidepoint(position):
+                return "author"
+            return None
 
         if self.state is GameState.PLAYING:
             if self.restart_button.contains(position):
@@ -299,7 +319,7 @@ class Game:
         """鼠标进入按钮时播放一次 click 音效。"""
         target = self._hover_target_at(position)
         if target is not None and target != self.hover_target:
-            self.audio.play("click", volume=0.55)
+            self.audio.play("click", volume=0.35)
         self.hover_target = target
 
     def update(self, delta_time: float) -> None:
@@ -535,16 +555,20 @@ class Game:
         pygame.draw.line(self.screen, ACCENT, (84, 82), (84, 544), 3)
         pygame.draw.circle(self.screen, ACCENT, (84, 82), 5)
 
-        title = self.title_font.render("Arr0w-voyage", True, INK)
-        self.screen.blit(title, (116, 68))
-
-        subtitle = self.start_subtitle_font.render("一箭又一箭", True, ACCENT)
-        self.screen.blit(subtitle, (120, 160))
+        logo = get_cropped_scaled_ui_asset(START_LOGO_FILE, (390, 190))
+        if logo is not None:
+            logo_rect = logo.get_rect(topleft=(105, 55))
+            self.screen.blit(logo, logo_rect)
+        else:
+            title = self.title_font.render("Arr0w-voyage", True, INK)
+            subtitle = self.start_subtitle_font.render("一箭又一箭", True, ACCENT)
+            self.screen.blit(title, (116, 68))
+            self.screen.blit(subtitle, (120, 160))
 
         line = self.body_font.render(
             "观察箭头方向，找到一条通向棋盘外的路。", True, INK_SOFT
         )
-        self.screen.blit(line, (120, 226))
+        self.screen.blit(line, (120, 280))
 
         tips = (
             "01  找出前方没有阻挡的箭头",
@@ -553,12 +577,66 @@ class Game:
         )
         for index, tip in enumerate(tips):
             text = self.small_font.render(tip, True, INK)
-            self.screen.blit(text, (120, 292 + index * 38))
+            self.screen.blit(text, (120, 324 + index * 38))
 
         mouse_position = pygame.mouse.get_pos()
         self.start_button.draw(self.screen, self.button_font, mouse_position)
 
         self._draw_sample_board()
+        self._draw_author_link()
+        self._draw_health_notice()
+
+    def _draw_author_link(self) -> None:
+        """绘制右下角作者名和 GitHub 仓库入口。"""
+        mouse_position = pygame.mouse.get_pos()
+        hovered = self.author_link_rect.collidepoint(mouse_position)
+        label = self.small_font.render(AUTHOR_NAME, True, INK)
+        icon_size = 36
+        content_width = label.get_width() + 8 + icon_size
+        content_left = self.author_link_rect.right - 12 - content_width
+
+        icon_center = (
+            content_left + icon_size // 2,
+            self.author_link_rect.centery,
+        )
+        icon = get_cropped_scaled_ui_asset(GITHUB_ICON_FILE, (icon_size, icon_size))
+        if icon is not None:
+            icon_rect = icon.get_rect(center=icon_center)
+            self.screen.blit(icon, icon_rect)
+        else:
+            draw_github_icon(self.screen, icon_center, icon_size)
+
+        label_rect = label.get_rect(
+            midleft=(icon_center[0] + icon_size // 2 + 8, self.author_link_rect.centery)
+        )
+        self.screen.blit(label, label_rect)
+
+        if hovered:
+            underline_y = self.author_link_rect.bottom - 4
+            pygame.draw.line(
+                self.screen,
+                INK_SOFT,
+                (content_left, underline_y),
+                (self.author_link_rect.right - 12, underline_y),
+                1,
+            )
+
+    def _draw_health_notice(self) -> None:
+        """绘制开始界面底部的健康游戏忠告。"""
+        title = self.small_font.render("健康游戏忠告", True, INK_SOFT)
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 522))
+        self.screen.blit(title, title_rect)
+
+        lines = (
+            "抵制不良游戏，拒绝盗版游戏。注意自我保护，谨防受骗上当。",
+            "适度游戏益脑，沉迷游戏伤身。合理安排时间，享受健康生活。",
+        )
+        for index, line in enumerate(lines):
+            text = self.tiny_font.render(line, True, INK_SOFT)
+            text_rect = text.get_rect(
+                center=(WINDOW_WIDTH // 2, 550 + index * 24)
+            )
+            self.screen.blit(text, text_rect)
 
     def _draw_sample_board(self) -> None:
         board = pygame.Rect(574, 168, 288, 288)
@@ -607,10 +685,12 @@ class Game:
         """绘制游戏 HUD、棋盘与侧边信息。"""
         self.screen.blit(self.background, (0, 0))
 
-        brand = self.heading_font.render("Arr0w-voyage", True, INK)
-        subtitle = self.small_font.render("点击式箭头解谜", True, ACCENT)
-        self.screen.blit(brand, (58, 27))
-        self.screen.blit(subtitle, (58, 65))
+        logo = get_cropped_scaled_ui_asset(GAME_LOGO_FILE, (220, 48))
+        if logo is not None:
+            self.screen.blit(logo, (58, 38))
+        else:
+            brand = self.heading_font.render("Arr0w-voyage", True, INK)
+            self.screen.blit(brand, (58, 38))
 
         level_text = self.subtitle_font.render(
             f"第 {self.current_level_index + 1:02d} 关  /  共 {len(LEVELS):02d} 关",

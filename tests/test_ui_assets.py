@@ -15,6 +15,9 @@ from ui import (
     DIALOG_CLOSE_ASSET,
     DIALOG_HEADER_ASSET,
     DIALOG_PANEL_ASSET,
+    GAME_LOGO_FILE,
+    GITHUB_ICON_FILE,
+    START_LOGO_FILE,
     TOOL_ASSET_FILES,
     TOOL_FRAME_ASSET,
     create_paper_background,
@@ -32,6 +35,9 @@ def test_all_ui_assets_can_be_loaded() -> None:
         *TOOL_ASSET_FILES.values(),
         CELL_ASSET_FILE,
         CURSOR_ASSET_FILE,
+        GITHUB_ICON_FILE,
+        START_LOGO_FILE,
+        GAME_LOGO_FILE,
     )
     for filename in filenames:
         image = load_ui_asset(filename)
