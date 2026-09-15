@@ -314,6 +314,32 @@ def test_author_link_is_hover_target(game: Game) -> None:
     assert game._hover_target_at(game.author_link_rect.center) == "author"
 
 
+def test_start_and_result_controls_stay_inside_background_safe_area(
+    game: Game,
+) -> None:
+    safe_area = pygame.Rect(40, 20, 880, 600)
+    controls = (
+        game.start_button.rect,
+        game.custom_mode_button.rect,
+        game.author_link_rect,
+        game.restart_button.rect,
+        game.exit_button.rect,
+        game.result_primary_button.rect,
+        game.result_secondary_button.rect,
+        *game.tool_rects.values(),
+    )
+
+    assert all(safe_area.contains(rect) for rect in controls)
+
+
+def test_custom_mode_button_does_not_start_normal_game(game: Game) -> None:
+    game.return_to_start()
+
+    game._handle_click(game.custom_mode_button.rect.center)
+
+    assert game.state is GameState.START
+
+
 def test_result_primary_button_matches_secondary_style(game: Game) -> None:
     primary = game.result_primary_button
     secondary = game.result_secondary_button

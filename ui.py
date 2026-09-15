@@ -39,16 +39,20 @@ DIALOG_PANEL_ASSET = "提示框背景.png"
 DIALOG_HEADER_ASSET = "提示框头部.png"
 DIALOG_CLOSE_ASSET = "关闭按钮.png"
 DIALOG_BUTTON_ASSET = "按钮.png"
+BUTTON_ASSET_FILE = "按钮.png"
 TOOL_FRAME_ASSET = "道具框.png"
+GAME_SCREEN_BACKGROUND_ASSET = "游戏界面背景.png"
 GITHUB_ICON_FILE = "github.jpeg"
 START_LOGO_FILE = "开始界面Logo.png"
 GAME_LOGO_FILE = "游戏界面Logo.png"
 
 _IMAGE_CACHE: dict[str, pygame.Surface] = {}
 _SCALED_IMAGE_CACHE: dict[tuple[str, tuple[int, int], tuple[int, int] | None], pygame.Surface] = {}
+_UI_SLICE_CACHE: dict[tuple[str, tuple[int, int], tuple[int, int, int, int], tuple[int, int, int] | None], pygame.Surface] = {}
 _CROPPED_IMAGE_CACHE: dict[tuple[str, tuple[int, int]], pygame.Surface] = {}
 _BACKGROUND_IMAGE_CACHE: dict[str, pygame.Surface] = {}
 _BACKGROUND_SCALED_CACHE: dict[tuple[str, tuple[int, int], int], pygame.Surface] = {}
+_BACKGROUND_SLICE_CACHE: dict[tuple[str, tuple[int, int], tuple[int, int, int, int]], pygame.Surface] = {}
 
 DIRECTION_VECTORS = {
     "UP": (0, -1),
@@ -148,6 +152,103 @@ def get_scaled_ui_asset(
     return scaled
 
 
+def get_nine_slice_ui_asset(
+    filename: str,
+    size: tuple[int, int],
+    target_border: tuple[int, int, int, int],
+    *,
+    tint: tuple[int, int, int] | None = None,
+) -> pygame.Surface | None:
+    """用九宫格缩放 UI 图片，并可选地只给可见像素染色。"""
+    width, height = max(1, size[0]), max(1, size[1])
+    cache_key = (filename, (width, height), target_border, tint)
+    cached = _UI_SLICE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    image = load_ui_asset(filename)
+    if image is None:
+        return None
+
+    source_width, source_height = image.get_size()
+    source_border = (
+        min(4, source_width // 2),
+        min(4, source_height // 2),
+        min(4, source_width // 2),
+        min(4, source_height // 2),
+    )
+    target_left = min(target_border[0], width // 2)
+    target_top = min(target_border[1], height // 2)
+    target_right = min(target_border[2], max(0, width - target_left))
+    target_bottom = min(target_border[3], max(0, height - target_top))
+
+    source_x = (
+        0,
+        source_border[0],
+        source_width - source_border[2],
+        source_width,
+    )
+    source_y = (
+        0,
+        source_border[1],
+        source_height - source_border[3],
+        source_height,
+    )
+    target_x = (
+        0,
+        target_left,
+        width - target_right,
+        width,
+    )
+    target_y = (
+        0,
+        target_top,
+        height - target_bottom,
+        height,
+    )
+
+    output = pygame.Surface((width, height), pygame.SRCALPHA)
+    for row in range(3):
+        for col in range(3):
+            source_rect = pygame.Rect(
+                source_x[col],
+                source_y[row],
+                source_x[col + 1] - source_x[col],
+                source_y[row + 1] - source_y[row],
+            )
+            target_rect = pygame.Rect(
+                target_x[col],
+                target_y[row],
+                target_x[col + 1] - target_x[col],
+                target_y[row + 1] - target_y[row],
+            )
+            if source_rect.width <= 0 or source_rect.height <= 0:
+                continue
+            piece = image.subsurface(source_rect)
+            if piece.get_size() != target_rect.size:
+                piece = pygame.transform.smoothscale(piece, target_rect.size)
+            output.blit(piece, target_rect.topleft)
+
+    if tint is not None:
+        for x in range(width):
+            for y in range(height):
+                red, green, blue, alpha = output.get_at((x, y))
+                if alpha == 0:
+                    continue
+                strength = 0.34
+                output.set_at(
+                    (x, y),
+                    (
+                        round(red * (1 - strength) + tint[0] * strength),
+                        round(green * (1 - strength) + tint[1] * strength),
+                        round(blue * (1 - strength) + tint[2] * strength),
+                        alpha,
+                    ),
+                )
+
+    _UI_SLICE_CACHE[cache_key] = output
+    return output
+
 def get_cropped_scaled_ui_asset(
     filename: str,
     max_size: tuple[int, int],
@@ -224,6 +325,79 @@ def get_scaled_background_asset(
     return scaled
 
 
+def get_nine_slice_background(
+    filename: str,
+    size: tuple[int, int],
+    target_border: tuple[int, int, int, int],
+) -> pygame.Surface | None:
+    """保留边框四角，放大背景中央浅色安全区。"""
+    cache_key = (filename, size, target_border)
+    cached = _BACKGROUND_SLICE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    image = load_background_asset(filename)
+    if image is None:
+        return None
+
+    source_width, source_height = image.get_size()
+    source_border = (
+        round(source_width * 0.0834),
+        round(source_height * 0.0625),
+        round(source_width * 0.0834),
+        round(source_height * 0.0625),
+    )
+    source_x = (
+        0,
+        source_border[0],
+        source_width - source_border[2],
+        source_width,
+    )
+    source_y = (
+        0,
+        source_border[1],
+        source_height - source_border[3],
+        source_height,
+    )
+    target_x = (
+        0,
+        target_border[0],
+        size[0] - target_border[2],
+        size[0],
+    )
+    target_y = (
+        0,
+        target_border[1],
+        size[1] - target_border[3],
+        size[1],
+    )
+
+    output = pygame.Surface(size)
+    for row in range(3):
+        for col in range(3):
+            source_rect = pygame.Rect(
+                source_x[col],
+                source_y[row],
+                source_x[col + 1] - source_x[col],
+                source_y[row + 1] - source_y[row],
+            )
+            target_rect = pygame.Rect(
+                target_x[col],
+                target_y[row],
+                target_x[col + 1] - target_x[col],
+                target_y[row + 1] - target_y[row],
+            )
+            if source_rect.width == 0 or source_rect.height == 0:
+                continue
+            piece = image.subsurface(source_rect)
+            if piece.get_size() != target_rect.size:
+                piece = pygame.transform.smoothscale(piece, target_rect.size)
+            output.blit(piece, target_rect.topleft)
+
+    _BACKGROUND_SLICE_CACHE[cache_key] = output
+    return output
+
+
 def set_custom_cursor() -> bool:
     """设置自定义鼠标，不支持时安全回退到系统鼠标。"""
     image = load_ui_asset(CURSOR_ASSET_FILE)
@@ -273,19 +447,29 @@ class Button:
         mouse_position: tuple[int, int],
     ) -> None:
         hovered = self.contains(mouse_position)
-        pygame.draw.rect(
-            surface,
-            self.hover_fill if hovered else self.normal_fill,
-            self.rect,
-            border_radius=self.radius,
+        button_image = get_nine_slice_ui_asset(
+            BUTTON_ASSET_FILE,
+            self.rect.size,
+            (12, 9, 12, 9),
+            tint=self.hover_fill if hovered else None,
         )
-        pygame.draw.rect(
-            surface,
-            self.border_color,
-            self.rect,
-            width=self.border_width,
-            border_radius=self.radius,
-        )
+
+        if button_image is not None:
+            surface.blit(button_image, self.rect.topleft)
+        else:
+            pygame.draw.rect(
+                surface,
+                self.hover_fill if hovered else self.normal_fill,
+                self.rect,
+                border_radius=self.radius,
+            )
+            pygame.draw.rect(
+                surface,
+                self.border_color,
+                self.rect,
+                width=self.border_width,
+                border_radius=self.radius,
+            )
 
         label = font.render(
             self.text,

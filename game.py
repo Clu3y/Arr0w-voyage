@@ -21,6 +21,7 @@ from ui import (
     DIALOG_PANEL_ASSET,
     DIRECTION_VECTORS,
     GAME_LOGO_FILE,
+    GAME_SCREEN_BACKGROUND_ASSET,
     GITHUB_ICON_FILE,
     INK,
     INK_SOFT,
@@ -40,6 +41,7 @@ from ui import (
     draw_tool_icon,
     get_scaled_background_asset,
     get_cropped_scaled_ui_asset,
+    get_nine_slice_background,
     load_font,
     set_custom_cursor,
 )
@@ -90,6 +92,14 @@ class Game:
         self.running = True
         self.state = GameState.START
         self.background = create_paper_background(WINDOW_SIZE)
+        self.game_background = (
+            get_nine_slice_background(
+                GAME_SCREEN_BACKGROUND_ASSET,
+                WINDOW_SIZE,
+                (40, 20, 40, 20),
+            )
+            or self.background
+        )
 
         self.title_font = load_font(70, bold=True)
         self.heading_font = load_font(30, bold=True)
@@ -101,10 +111,14 @@ class Game:
         self.button_font = load_font(24, bold=True)
         self.small_button_font = load_font(18, bold=True)
 
-        self.start_button = Button(pygame.Rect(112, 450, 210, 58), "开始游戏")
+        self.start_button = Button(pygame.Rect(112, 440, 210, 52), "开始游戏")
+        self.custom_mode_button = Button(
+            pygame.Rect(112, 508, 210, 52),
+            "自定义模式",
+        )
         self.author_link_rect = pygame.Rect(690, 574, 220, 38)
         self.restart_button = Button(
-            pygame.Rect(646, 36, 122, 40),
+            pygame.Rect(600, 42, 150, 48),
             "重新开始",
             radius=11,
             normal_fill=PAPER_LIGHT,
@@ -115,7 +129,7 @@ class Game:
             border_width=1,
         )
         self.exit_button = Button(
-            pygame.Rect(780, 36, 122, 40),
+            pygame.Rect(760, 42, 150, 48),
             "退出游戏",
             radius=11,
             normal_fill=PAPER_LIGHT,
@@ -212,6 +226,8 @@ class Game:
         if self.state is GameState.START:
             if self.start_button.contains(position):
                 self.start_game()
+            elif self.custom_mode_button.contains(position):
+                return
             elif self.author_link_rect.collidepoint(position):
                 self._open_repository()
             return
@@ -295,6 +311,8 @@ class Game:
         if self.state is GameState.START:
             if self.start_button.contains(position):
                 return "start"
+            if self.custom_mode_button.contains(position):
+                return "custom_mode"
             if self.author_link_rect.collidepoint(position):
                 return "author"
             return None
@@ -550,7 +568,7 @@ class Game:
 
     def _draw_start_screen(self) -> None:
         """绘制偏印刷海报风格的开始界面。"""
-        self.screen.blit(self.background, (0, 0))
+        self.screen.blit(self.game_background, (0, 0))
 
         pygame.draw.line(self.screen, ACCENT, (84, 82), (84, 544), 3)
         pygame.draw.circle(self.screen, ACCENT, (84, 82), 5)
@@ -577,10 +595,15 @@ class Game:
         )
         for index, tip in enumerate(tips):
             text = self.small_font.render(tip, True, INK)
-            self.screen.blit(text, (120, 324 + index * 38))
+            self.screen.blit(text, (120, 324 + index * 36))
 
         mouse_position = pygame.mouse.get_pos()
         self.start_button.draw(self.screen, self.button_font, mouse_position)
+        self.custom_mode_button.draw(
+            self.screen,
+            self.button_font,
+            mouse_position,
+        )
 
         self._draw_sample_board()
         self._draw_author_link()
@@ -624,7 +647,7 @@ class Game:
     def _draw_health_notice(self) -> None:
         """绘制开始界面底部的健康游戏忠告。"""
         title = self.small_font.render("健康游戏忠告", True, INK_SOFT)
-        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 522))
+        title_rect = title.get_rect(center=(650, 498))
         self.screen.blit(title, title_rect)
 
         lines = (
@@ -634,36 +657,42 @@ class Game:
         for index, line in enumerate(lines):
             text = self.tiny_font.render(line, True, INK_SOFT)
             text_rect = text.get_rect(
-                center=(WINDOW_WIDTH // 2, 550 + index * 24)
+                center=(650, 524 + index * 22)
             )
             self.screen.blit(text, text_rect)
 
     def _draw_sample_board(self) -> None:
+        """使用与游戏棋盘一致的素材绘制开始界面棋盘。"""
         board = pygame.Rect(574, 168, 288, 288)
         pygame.draw.rect(
-            self.screen, PAPER_DEEP, board.move(6, 7), border_radius=14
+            self.screen,
+            PAPER_DEEP,
+            board.move(3, 5),
+            border_radius=18,
         )
-        pygame.draw.rect(self.screen, PAPER_LIGHT, board, border_radius=14)
-        pygame.draw.rect(
-            self.screen, CELL_BORDER, board, width=2, border_radius=14
-        )
+        pygame.draw.rect(self.screen, CELL_BED, board, border_radius=18)
 
         cell_size = 96
         for row in range(3):
             for col in range(3):
                 cell = pygame.Rect(
-                    board.left + col * cell_size + 5,
-                    board.top + row * cell_size + 5,
-                    cell_size - 10,
-                    cell_size - 10,
+                    board.left + col * cell_size,
+                    board.top + row * cell_size,
+                    cell_size,
+                    cell_size,
                 )
-                pygame.draw.rect(
-                    self.screen, CELL_FACE, cell, border_radius=7
-                )
+                inner_rect = cell.inflate(-8, -8)
+                if not draw_cell_texture(self.screen, inner_rect):
+                    pygame.draw.rect(
+                        self.screen,
+                        CELL_FACE,
+                        inner_rect,
+                        border_radius=7,
+                    )
                 pygame.draw.rect(
                     self.screen,
                     CELL_BORDER,
-                    cell,
+                    inner_rect,
                     width=1,
                     border_radius=7,
                 )
@@ -681,9 +710,16 @@ class Game:
             )
             draw_arrow(self.screen, center, direction, 62)
 
+        pygame.draw.rect(
+            self.screen,
+            BOARD_BORDER,
+            board,
+            width=2,
+            border_radius=18,
+        )
     def _draw_game_screen(self) -> None:
         """绘制游戏 HUD、棋盘与侧边信息。"""
-        self.screen.blit(self.background, (0, 0))
+        self.screen.blit(self.game_background, (0, 0))
 
         logo = get_cropped_scaled_ui_asset(GAME_LOGO_FILE, (220, 48))
         if logo is not None:
@@ -808,7 +844,7 @@ class Game:
 
     def _draw_result_screen(self) -> None:
         """绘制关卡完成、全部通关和失败结果界面。"""
-        self.screen.blit(self.background, (0, 0))
+        self.screen.blit(self.game_background, (0, 0))
 
         is_success = self.state in (
             GameState.LEVEL_COMPLETE,
@@ -834,8 +870,12 @@ class Game:
         pygame.draw.line(self.screen, accent, (100, 108), (100, 500), 3)
         pygame.draw.circle(self.screen, accent, (100, 108), 5)
 
-        brand = self.small_font.render("Arr0w-voyage", True, INK_SOFT)
-        self.screen.blit(brand, (128, 98))
+        logo = get_cropped_scaled_ui_asset(GAME_LOGO_FILE, (220, 48))
+        if logo is not None:
+            self.screen.blit(logo, (128, 88))
+        else:
+            brand = self.small_font.render("Arr0w-voyage", True, INK_SOFT)
+            self.screen.blit(brand, (128, 98))
 
         kicker_text = self.small_font.render(kicker, True, accent)
         self.screen.blit(kicker_text, (130, 160))
