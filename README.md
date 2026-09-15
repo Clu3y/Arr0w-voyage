@@ -12,6 +12,11 @@
 
 ## 安装与运行
 
+### 方式1：从 GitHub Release 下载（推荐 Windows 用户）
+1. 点击这里直接下载：[Arr0wVoyage.exe](https://github.com/Clu3y/Arr0w-voyage/releases/download/v1.0.0/Arr0wVoyage.exe)
+2. 双击 `Arr0wVoyage.exe` 即可直接运行游戏，无需额外安装 Python 和依赖库
+
+### 方式2：
 推荐在 Windows PowerShell 中执行：
 
 ```powershell
