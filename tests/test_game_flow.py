@@ -332,12 +332,13 @@ def test_start_and_result_controls_stay_inside_background_safe_area(
     assert all(safe_area.contains(rect) for rect in controls)
 
 
-def test_custom_mode_button_does_not_start_normal_game(game: Game) -> None:
+def test_custom_mode_button_opens_config_without_starting_game(game: Game) -> None:
     game.return_to_start()
 
     game._handle_click(game.custom_mode_button.rect.center)
 
-    assert game.state is GameState.START
+    assert game.state is GameState.CUSTOM_CONFIG
+    assert game.is_custom_mode is False
 
 
 def test_result_primary_button_matches_secondary_style(game: Game) -> None:

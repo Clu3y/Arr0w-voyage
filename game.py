@@ -10,6 +10,11 @@ import pygame
 
 from animations import AnimationState
 from audio import AudioManager
+from custom_mode import (
+    CustomModeConfig,
+    CustomModeConfigScreen,
+    generate_random_board,
+)
 from levels import LEVELS
 from logic import Board, can_fly_out, count_remaining_arrows
 from tools import TOOL_DESCRIPTIONS, TOOL_KEYS, ToolId, ToolState
@@ -74,9 +79,11 @@ class GameState(Enum):
     """游戏当前所处的大状态。"""
 
     START = auto()
+    CUSTOM_CONFIG = auto()
     PLAYING = auto()
     LEVEL_COMPLETE = auto()
     GAME_COMPLETE = auto()
+    CUSTOM_COMPLETE = auto()
     LOSE = auto()
 
 
@@ -110,6 +117,7 @@ class Game:
         self.tiny_font = load_font(14)
         self.button_font = load_font(24, bold=True)
         self.small_button_font = load_font(18, bold=True)
+        self.custom_mode_screen = CustomModeConfigScreen(self.game_background)
 
         self.start_button = Button(pygame.Rect(112, 440, 210, 52), "开始游戏")
         self.custom_mode_button = Button(
@@ -179,6 +187,8 @@ class Game:
         self.hovered_cell: tuple[int, int] | None = None
         self.effects = AnimationState()
         self.tools = ToolState()
+        self.custom_config = CustomModeConfig()
+        self.is_custom_mode = False
         self.audio = AudioManager()
         self.audio.play_music("bgm")
         self.hover_target: str | None = None
@@ -204,6 +214,12 @@ class Game:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
                 self._handle_keydown(event.key)
+            elif event.type == pygame.MOUSEMOTION:
+                if self.state is GameState.CUSTOM_CONFIG:
+                    self.custom_mode_screen.handle_mouse_motion(event.pos)
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if self.state is GameState.CUSTOM_CONFIG:
+                    self.custom_mode_screen.handle_mouse_up()
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 self._handle_click(event.pos)
 
@@ -216,18 +232,26 @@ class Game:
             if self.state is GameState.START:
                 self.running = False
             else:
-                self.state = GameState.START
+                self.return_to_start()
 
     def _handle_click(self, position: tuple[int, int]) -> None:
         if self.dialog_action is not None:
             self._handle_dialog_click(position)
             return
 
+        if self.state is GameState.CUSTOM_CONFIG:
+            target = self.custom_mode_screen.handle_mouse_down(position)
+            if target == "start":
+                self.start_custom_game()
+            elif target == "back":
+                self.return_to_start()
+            return
+
         if self.state is GameState.START:
             if self.start_button.contains(position):
                 self.start_game()
             elif self.custom_mode_button.contains(position):
-                return
+                self.open_custom_mode_config()
             elif self.author_link_rect.collidepoint(position):
                 self._open_repository()
             return
@@ -260,6 +284,10 @@ class Game:
             return
 
         if not self.result_primary_button.contains(position):
+            return
+
+        if self.is_custom_mode:
+            self.restart_custom_game()
             return
 
         if self.state is GameState.LEVEL_COMPLETE:
@@ -307,6 +335,9 @@ class Game:
             if self.dialog_cancel_rect.collidepoint(position):
                 return "dialog_cancel"
             return None
+
+        if self.state is GameState.CUSTOM_CONFIG:
+            return self.custom_mode_screen.hover_target_at(position)
 
         if self.state is GameState.START:
             if self.start_button.contains(position):
@@ -369,9 +400,29 @@ class Game:
 
     def start_game(self) -> None:
         """从第一关开始游戏。"""
+        self.is_custom_mode = False
         self.current_level_index = 0
         self.audio.play_music("bgm")
         self._load_level(reset_tools=True, reset_mistakes=True)
+
+    def open_custom_mode_config(self) -> None:
+        """打开自定义配置页并恢复默认配置。"""
+        self.dialog_action = None
+        self.hover_target = None
+        self.hovered_cell = None
+        self.custom_mode_screen.reset()
+        self.state = GameState.CUSTOM_CONFIG
+
+    def start_custom_game(self) -> None:
+        """读取配置并开始一局自定义游戏。"""
+        self.custom_config = self.custom_mode_screen.config
+        self.audio.play_music("bgm")
+        self._load_custom_board(reset_tools=True, reset_mistakes=True)
+
+    def restart_custom_game(self) -> None:
+        """使用同一配置重新随机生成并开始自定义游戏。"""
+        self.audio.play_music("bgm")
+        self._load_custom_board(reset_tools=True, reset_mistakes=True)
 
     def next_level(self) -> None:
         """进入下一关。"""
@@ -382,6 +433,8 @@ class Game:
 
     def return_to_start(self) -> None:
         """返回开始界面。"""
+        self.is_custom_mode = False
+        self.custom_mode_screen.handle_mouse_up()
         self.state = GameState.START
         self.dialog_action = None
         self.round_finished = False
@@ -390,7 +443,10 @@ class Game:
         self.effects.reset()
 
     def restart_level(self) -> None:
-        """重新开始整局游戏，并回到第一关。"""
+        """重新开始当前模式；普通模式回到第一关。"""
+        if self.is_custom_mode:
+            self.restart_custom_game()
+            return
         self.current_level_index = 0
         self.audio.play_music("bgm")
         self._load_level(reset_tools=True, reset_mistakes=True)
@@ -401,6 +457,7 @@ class Game:
         reset_tools: bool = False,
         reset_mistakes: bool = False,
     ) -> None:
+        self.is_custom_mode = False
         self.board = copy.deepcopy(LEVELS[self.current_level_index])
         self.dialog_action = None
         self.max_mistakes = 3
@@ -410,6 +467,34 @@ class Game:
         self.effects.reset()
         if reset_tools:
             self.tools.reset()
+        else:
+            self.tools.cancel_selection()
+        self.round_finished = False
+        self.pending_result = None
+        self.message = "点击没有被挡住的箭头"
+        self.state = GameState.PLAYING
+
+    def _load_custom_board(
+        self,
+        *,
+        reset_tools: bool = False,
+        reset_mistakes: bool = False,
+    ) -> None:
+        """按保存的配置生成随机棋盘并进入 PLAYING。"""
+        config = self.custom_config
+        self.is_custom_mode = True
+        self.board = generate_random_board(
+            config.board_size,
+            config.difficulty,
+        )
+        self.dialog_action = None
+        self.max_mistakes = 3
+        if reset_mistakes:
+            self.mistakes = 0
+        self.hovered_cell = None
+        self.effects.reset()
+        if reset_tools:
+            self.tools.reset(config.tool_counts())
         else:
             self.tools.cancel_selection()
         self.round_finished = False
@@ -467,7 +552,10 @@ class Game:
         if remaining == 0:
             self.round_finished = True
             self.audio.play("win")
-            if self.current_level_index == len(LEVELS) - 1:
+            if self.is_custom_mode:
+                self.pending_result = GameState.CUSTOM_COMPLETE
+                self.message = "自定义棋盘已清空"
+            elif self.current_level_index == len(LEVELS) - 1:
                 self.pending_result = GameState.GAME_COMPLETE
                 self.message = "最后一关已清空，全部通关"
             else:
@@ -493,7 +581,7 @@ class Game:
             self.tools.cancel_selection()
 
         if self.tools.is_used(tool):
-            self.message = "这个道具本关已经用过了"
+            self.message = "这个道具次数已经用完了"
             return
 
         if tool is ToolId.HINT:
@@ -555,7 +643,9 @@ class Game:
 
     def draw(self) -> None:
         """根据当前状态绘制界面。"""
-        if self.state is GameState.START:
+        if self.state is GameState.CUSTOM_CONFIG:
+            self.custom_mode_screen.draw(self.screen)
+        elif self.state is GameState.START:
             self._draw_start_screen()
         elif self.state is GameState.PLAYING:
             self._draw_game_screen()
@@ -728,8 +818,16 @@ class Game:
             brand = self.heading_font.render("Arr0w-voyage", True, INK)
             self.screen.blit(brand, (58, 38))
 
+        level_label = (
+            "自定义模式"
+            if self.is_custom_mode
+            else (
+                f"第 {self.current_level_index + 1:02d} 关"
+                f"  /  共 {len(LEVELS):02d} 关"
+            )
+        )
         level_text = self.subtitle_font.render(
-            f"第 {self.current_level_index + 1:02d} 关  /  共 {len(LEVELS):02d} 关",
+            level_label,
             True,
             INK_SOFT,
         )
@@ -843,15 +941,24 @@ class Game:
             self.screen.blit(close_image, self.dialog_close_rect.topleft)
 
     def _draw_result_screen(self) -> None:
-        """绘制关卡完成、全部通关和失败结果界面。"""
+        """绘制普通关卡或自定义模式的结果界面。"""
         self.screen.blit(self.game_background, (0, 0))
 
         is_success = self.state in (
             GameState.LEVEL_COMPLETE,
             GameState.GAME_COMPLETE,
+            GameState.CUSTOM_COMPLETE,
         )
         accent = MOSS if is_success else ACCENT
-        if self.state is GameState.LEVEL_COMPLETE:
+        if self.state is GameState.CUSTOM_COMPLETE:
+            board_size = self.custom_config.board_size
+            kicker = "CUSTOM CLEAR"
+            title = "自定义模式完成"
+            description = (
+                f"{board_size}×{board_size} 棋盘已经清空，可以再来一局。"
+            )
+            primary_text = "再来一局"
+        elif self.state is GameState.LEVEL_COMPLETE:
             kicker = "LEVEL COMPLETE"
             title = "本关通过"
             description = "棋盘已经清空，下一关正等着你。"
@@ -861,6 +968,11 @@ class Game:
             title = "全部通关"
             description = "三关全部清空，最后一支箭也顺利离场。"
             primary_text = "再玩一遍"
+        elif self.is_custom_mode:
+            kicker = "TRY AGAIN"
+            title = "自定义模式失败"
+            description = "失误次数已经用完，重新生成棋盘再出发。"
+            primary_text = "重新开始"
         else:
             kicker = "TRY AGAIN"
             title = "本关失败"
@@ -890,11 +1002,19 @@ class Game:
         mistakes_left = max(0, self.max_mistakes - self.mistakes)
         stats_rect = pygame.Rect(132, 342, 728, 46)
         pygame.draw.rect(self.screen, PAPER_LIGHT, stats_rect, border_radius=10)
-        stats = (
-            f"第 {self.current_level_index + 1:02d} 关   |   "
-            f"剩余箭头 {remaining:02d}   |   "
-            f"剩余失误 {mistakes_left}"
-        )
+        if self.is_custom_mode:
+            board_size = self.custom_config.board_size
+            stats = (
+                f"自定义棋盘 {board_size}×{board_size}   |   "
+                f"剩余箭头 {remaining:02d}   |   "
+                f"剩余失误 {mistakes_left}"
+            )
+        else:
+            stats = (
+                f"第 {self.current_level_index + 1:02d} 关   |   "
+                f"剩余箭头 {remaining:02d}   |   "
+                f"剩余失误 {mistakes_left}"
+            )
         stats_text = self.body_font.render(stats, True, INK)
         stats_rect_text = stats_text.get_rect(center=stats_rect.center)
         self.screen.blit(stats_text, stats_rect_text)

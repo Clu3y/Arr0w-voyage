@@ -1,9 +1,10 @@
-"""道具定义与一次性使用状态。"""
+"""道具定义与可配置使用次数状态。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Mapping
 
 
 class ToolId(str, Enum):
@@ -35,15 +36,23 @@ TOOL_DESCRIPTIONS = {
 
 @dataclass
 class ToolState:
-    """维护每个道具的一次性次数和目标选择状态。"""
+    """维护每个道具的剩余次数和目标选择状态。"""
 
     remaining: dict[ToolId, int] = field(
         default_factory=lambda: {tool: 1 for tool in TOOL_KEYS}
     )
     pending: ToolId | None = None
 
-    def reset(self) -> None:
-        self.remaining = {tool: 1 for tool in TOOL_KEYS}
+    def reset(
+        self,
+        remaining: Mapping[ToolId, int] | None = None,
+    ) -> None:
+        """恢复到普通模式默认值，或使用指定次数。"""
+        counts = {tool: 1 for tool in TOOL_KEYS}
+        if remaining is not None:
+            for tool in TOOL_KEYS:
+                counts[tool] = max(0, int(remaining.get(tool, 1)))
+        self.remaining = counts
         self.pending = None
 
     def is_used(self, tool: ToolId) -> bool:
@@ -52,7 +61,7 @@ class ToolState:
     def consume(self, tool: ToolId) -> bool:
         if self.is_used(tool):
             return False
-        self.remaining[tool] = 0
+        self.remaining[tool] -= 1
         return True
 
     def begin_selection(self, tool: ToolId) -> None:
