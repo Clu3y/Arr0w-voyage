@@ -108,6 +108,8 @@ def generate_random_board(
     )
 
     board: Board = [[None for _ in range(board_size)] for _ in range(board_size)]
+    previous_direction: str | None = None
+
     for row, col in selected:
         clear_directions: list[str] = []
         for direction in DIRECTIONS:
@@ -115,9 +117,26 @@ def generate_random_board(
             if can_fly_out(board, row, col):
                 clear_directions.append(direction)
             board[row][col] = None
+
         if not clear_directions:
             continue
-        board[row][col] = generator.choice(clear_directions)
+
+        if len(clear_directions) == 1:
+            chosen_direction = clear_directions[0]
+        else:
+            # 降低连续使用同一方向的概率，同时保留少量重复的可能性。
+            weights = [
+                1.0 if direction == previous_direction else 4.0
+                for direction in clear_directions
+            ]
+            chosen_direction = generator.choices(
+                clear_directions,
+                weights=weights,
+                k=1,
+            )[0]
+
+        board[row][col] = chosen_direction
+        previous_direction = chosen_direction
 
     return board
 
