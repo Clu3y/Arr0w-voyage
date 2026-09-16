@@ -51,7 +51,7 @@
 > [!TIP]
 > 不想配置 Python 环境，可以直接下载已经打包好的可执行文件。
 
-**[下载 Arr0wVoyage.exe](https://github.com/Clu3y/Arr0w-voyage/releases/download/v1.0.0/Arr0wVoyage.exe)**
+**[下载 Arr0wVoyage.exe](https://github.com/Clu3y/Arr0w-voyage/releases/download/v1.1.0/Arr0wVoyage.exe)**
 
 下载后双击 `Arr0wVoyage.exe` 即可运行，无需额外安装 Python 或依赖库。
 
