@@ -8,7 +8,7 @@
   <p>
     <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12"></a>
     <a href="https://www.pygame.org/"><img src="https://img.shields.io/badge/Pygame-2.6%2B-6DA544?style=flat-square&logo=python&logoColor=white" alt="Pygame 2.6+"></a>
-    <a href="https://github.com/Clu3y/Arr0w-voyage/releases/download/v1.0.0/Arr0wVoyage.exe"><img src="https://img.shields.io/badge/下载-Windows%20EXE-2EA44F?style=flat-square&logo=github&logoColor=white" alt="下载 Windows EXE"></a>
+    <a href="https://github.com/Clu3y/Arr0w-voyage/releases/download/v1.1.0/Arr0wVoyage.exe"><img src="https://img.shields.io/badge/下载-Windows%20EXE-2EA44F?style=flat-square&logo=github&logoColor=white" alt="下载 Windows EXE"></a>
     <a href="https://github.com/Clu3y/Arr0w-voyage"><img src="https://img.shields.io/badge/GitHub-Arr0w--voyage-181717?style=flat-square&logo=github&logoColor=white" alt="GitHub 仓库"></a>
   </p>
 
@@ -18,8 +18,7 @@
     <a href="#玩法与操作">玩法与操作</a> ·
     <a href="#关卡设计">关卡设计</a> ·
     <a href="#界面预览">界面预览</a> ·
-    <a href="#项目结构">项目结构</a> ·
-    <a href="#开发与测试">开发与测试</a>
+    <a href="#项目结构">项目结构</a> 
   </p>
 </div>
 
@@ -100,7 +99,6 @@ python -m venv .venv
 - 被阻挡的箭头不会消失，并会通过晃动、变色和音效提示玩家。
 - 普通模式共有 3 次失误机会，失误次数会在三个关卡之间保留。
 - 普通模式下，提示、增加失误次数和移出三种道具各可使用一次。
-- 自定义模式支持 1~10 的 N×N 棋盘、三类道具各 0~9 次，以及用于控制空位置比例的难度系数。
 
 ## 关卡设计
 
